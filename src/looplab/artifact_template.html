@@ -307,8 +307,16 @@ ov.addEventListener('click', ev => {
   selected = r; showCell(r); drawCross(r, true);
   const match = DATA.cands.find(k => k.start_frame === r.s && (k.len_frames-offMin) === r.oi)
     || nearestCand(r);
+  highlightChip(match ? match.rank : null);
   openDetail(r, match);
 });
+
+// keep the candidate chips in sync with whatever the map selects
+function highlightChip(rank) {
+  document.querySelectorAll('.chip').forEach(x =>
+    x.classList.toggle('sel', Number(x.dataset.rank) === rank));
+  document.querySelector('.chip.sel')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
 function nearestCand(c) {
   let best = null, bd = 1e9;
   for (const k of DATA.cands) {
@@ -322,12 +330,13 @@ const chips = document.getElementById('chips');
 DATA.cands.forEach(c => {
   const b = document.createElement('button');
   b.className = 'chip mono';
+  b.dataset.rank = c.rank;
   b.innerHTML = `<span class="r">#${c.rank}</span>${c.start_s.toFixed(2)}\u2192${c.end_s.toFixed(2)}s \u00b7 ${c.len_s.toFixed(2)}s`;
   b.addEventListener('click', () => {
     selected = { s: c.start_frame, oi: c.len_frames - offMin };
-    showCell(selected); drawCross(selected, true); openDetail(selected, c);
-    document.querySelectorAll('.chip').forEach(x => x.classList.remove('sel'));
-    b.classList.add('sel');
+    showCell(selected); drawCross(selected, true);
+    highlightChip(c.rank);
+    openDetail(selected, c);
   });
   chips.appendChild(b);
 });
@@ -397,7 +406,7 @@ function getScrubURL() {
 // Loop an arbitrary [t0, t1) segment of the whole-video proxy by seeking back
 // each time the end is reached, checked once per displayed frame.
 function segmentLoop(el, t0, t1) {
-  el.muted = true;  // property, not just attribute — keeps programmatic play() allowed
+  el.muted = true;  // property, not just attribute - keeps programmatic play() allowed
   const toStart = () => { el.currentTime = t0; };
   if (el.readyState >= 1) toStart();
   else el.addEventListener('loadedmetadata', toStart, { once: true });
@@ -423,7 +432,7 @@ document.getElementById('d-copy').addEventListener('click', async () => {
   } catch {}
 });
 
-// Chrome suspends muted playback in hidden tabs and does not resume it —
+// Chrome suspends muted playback in hidden tabs and does not resume it -
 // restart the active preview when the tab becomes visible again.
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
