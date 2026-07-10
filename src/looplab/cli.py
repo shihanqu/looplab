@@ -34,7 +34,14 @@ def build_parser() -> argparse.ArgumentParser:
         prog="looplab",
         description="Find and cut the most seamless loop in a video of "
                     "repetitive motion.")
-    ap.add_argument("src", help="input video (any ffmpeg-readable format)")
+    ap.add_argument("src", nargs="?",
+                    help="input video (any ffmpeg-readable format); optional "
+                         "with --ui, where it pre-loads the analysis")
+    ap.add_argument("--ui", action="store_true",
+                    help="start the local explorer UI: pick a video with the "
+                         "native OS file dialog, analyze, browse the heatmap")
+    ap.add_argument("--port", type=int, default=8321,
+                    help="port for --ui (default 8321, localhost only)")
     ap.add_argument("-o", "--output",
                     help="output loop path (default: <src>.loop.mp4)")
     ap.add_argument("--json", action="store_true",
@@ -81,6 +88,12 @@ def main(argv=None) -> int:
 
     if not (shutil.which("ffmpeg") and shutil.which("ffprobe")):
         return _fail(args, 3, "ffmpeg/ffprobe not found on PATH")
+    if args.ui:
+        from . import server
+        server.serve(port=args.port, initial=args.src)
+        return 0
+    if not args.src:
+        return _fail(args, 4, "missing input video (or pass --ui)")
     src = Path(args.src)
     if not src.exists():
         return _fail(args, 4, f"input not found: {src}")

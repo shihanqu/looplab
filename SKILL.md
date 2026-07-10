@@ -55,7 +55,7 @@ On failure: `{"ok": false, "error": "...", "exit_code": N}` on stdout, same code
 ## Interpreting results / next actions
 
 - **Trust `chosen` when** `percentile` ≤ ~0.05 and `activity` ≥ ~0.8. Deliver `output` directly.
-- **Verify visually** when the top scores cluster tightly: render more with `--render-top 3` and compare, or build the human-facing explorer with `--explore` (adds `index.html` + self-contained `artifact.html` to the workdir).
+- **Verify visually** when the top scores cluster tightly: render more with `--render-top 3` and compare, or build the human-facing explorer with `--explore` (adds `index.html` + self-contained `artifact.html` to the workdir). For an interactive session, `looplab --ui` serves the explorer locally with a native OS file picker — meant for humans; agents should stay on the headless flags.
 - **Exit 2 (all gated)**: retry with `--min-activity 0.5`; if still failing, widen `--max-loop` (e.g. 5) or lower `--min-loop`. Persistent failure usually means camera motion or no true repetition.
 - **Seam pops on a specific object** despite a good score: raise `--focus-weight` (2.0) — it weights the bright-object state stream. Footage without a bright subject: `--focus-weight 0`.
 - **Slow machine / long video**: `--proxy-long 256` quarters the math at slight discrimination cost.

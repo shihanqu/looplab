@@ -6,7 +6,7 @@ Find the most seamless loop hidden in a video of repetitive motion — and cut i
 looplab input.mp4        # → input.loop.mp4, the best wrap point in the footage
 ```
 
-![looplab turning a clip into a seamless loop](docs/usage.gif)
+![the looplab explorer: open a video with the OS file picker, scrub the seam heatmap, preview and export loops](docs/usage.gif)
 
 Point it at footage of anything cyclic — a fidget toy, a pendulum, pouring, spinning, kneading — and looplab scores **every possible (start, end) cut pair** for how invisibly the video can wrap from its last frame back to its first, then renders the winner.
 
@@ -71,7 +71,14 @@ Logs go to stderr; stdout carries only the output path (or JSON). Analysis artif
 
 ## The explorer
 
-`--explore` builds a self-contained HTML heatmap of the entire search space: hover to scrub any (start, end) pair with a magnetic cursor that snaps to ridge peaks, click any cell for an instant in-page segment preview, and one-click export the top cuts. Two files are produced: `index.html` (serve the workdir, full-quality previews for the top 10) and `artifact.html` (single-file, videos embedded as data URIs — postable anywhere a strict CSP applies).
+```bash
+looplab --ui                 # open the explorer, pick a video with the OS file dialog
+looplab input.mp4 --ui       # same, pre-loading this video
+```
+
+`--ui` starts a localhost-only server and opens the explorer in your browser. **Open video…** raises the native OS file picker (macOS `choose file`, tkinter elsewhere) — the server gets a real filesystem path and analyzes the original in place, no upload or copy; live progress streams into the toolbar. The explorer itself is a heatmap of the entire search space: hover to scrub any (start, end) pair with a magnetic cursor that snaps to ridge peaks, click any cell for an instant in-page segment preview, and one-click export the top cuts.
+
+For a no-server snapshot, `--explore` writes the same UI as static files into the workdir: `index.html` (full-quality previews for the top 10) and `artifact.html` (single-file, videos embedded as data URIs — postable anywhere a strict CSP applies).
 
 ## For agents
 
