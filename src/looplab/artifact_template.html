@@ -90,11 +90,12 @@
   .stripbox .cap { color: var(--muted); font-size: 12px; margin-top: 6px; }
   .exportrow { display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
     margin: 10px 0 16px; }
-  a.export { display: inline-block; background: var(--accent); color: #fff;
-    border-radius: 6px; padding: 8px 16px; font-size: 13px; font-weight: 600;
-    text-decoration: none; }
-  a.export:hover { filter: brightness(1.06); }
-  a.export:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .export { display: inline-block; background: var(--accent); color: #fff;
+    border: none; border-radius: 6px; padding: 8px 16px; font-size: 13px;
+    font-weight: 600; font-family: inherit; text-decoration: none; cursor: pointer; }
+  .export:hover { filter: brightness(1.06); }
+  .export:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .export[disabled] { opacity: .7; cursor: default; }
   .note { color: var(--muted); font-size: 13px; max-width: 78ch; }
 </style>
 
@@ -366,7 +367,7 @@ function openDetail(cell, cand) {
   }
   if (asset && asset.export) {
     html += `<div class="exportrow">
-        <a class="export" download="${asset.name}" href="${asset.export}">Export loop (MP4)</a>
+        <button type="button" class="export">Export loop (MP4)</button>
         <span class="cap">${DATA.mode === 'artifact'
           ? 'embedded encode (CRF 23) \u2014 the command below cuts source-grade'
           : 'full-quality cut from the source'}</span>
@@ -389,6 +390,36 @@ function openDetail(cell, cand) {
     sv.src = u;
     segmentLoop(sv, s / FPS, e / FPS);
   });
+  const exp = box.querySelector('.export');
+  if (exp && asset && asset.export)
+    exp.addEventListener('click', () => exportLoop(exp, asset.export, asset.name));
+}
+
+// Download the loop. Browsers ignore <a download> for data: URLs (treated as
+// cross-origin) and just try to navigate — which the artifact's sandboxed
+// iframe blocks silently. Fetching into a same-origin blob: URL makes the
+// download attribute work; if the sandbox blocks downloads entirely, fall
+// back to opening the clip in a new tab so it can be saved manually.
+async function exportLoop(btn, url, name) {
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Preparing...';
+  try {
+    const blob = await (await fetch(url)).blob();
+    const obj = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = obj;
+    a.download = name || 'loop.mp4';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(obj), 15000);
+    btn.textContent = 'Saved';
+  } catch (e) {
+    try { window.open(url, '_blank'); btn.textContent = 'Opened in new tab'; }
+    catch (_) { btn.textContent = 'Download blocked'; }
+  }
+  setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 2500);
 }
 
 // The scrub source plays from a blob/data URL so it is fully seekable even
