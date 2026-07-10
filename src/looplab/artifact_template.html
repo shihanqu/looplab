@@ -369,12 +369,16 @@ function openDetail(cell, cand) {
       here even when the seam is perfect; the rendered cut (command below) is the true seam.</p>`;
   }
   if (asset && asset.export) {
+    const cap = SANDBOXED
+      ? 'this embedded preview blocks file downloads (host sandbox) \u2014 if Export ' +
+        'yields nothing, run the command below or use your local explorer'
+      : (DATA.mode === 'artifact'
+          ? 'embedded encode (CRF 23) \u2014 the command below cuts source-grade'
+          : 'full-quality cut from the source');
     html += `<div class="exportrow">
         <button type="button" class="export">Export loop (MP4)</button>
         <button type="button" class="export ghost openraw">Open raw video</button>
-        <span class="cap">${DATA.mode === 'artifact'
-          ? 'embedded encode (CRF 23) \u2014 the command below cuts source-grade'
-          : 'full-quality cut from the source'}</span>
+        <span class="cap">${cap}</span>
       </div>`;
   }
   if (cand && DATA.strips[cand.rank]) {
@@ -417,6 +421,14 @@ function dataURIToBlob(uri) {
   return new Blob([bytes], { type: mime });
 }
 
+// In a cross-origin sandboxed iframe (e.g. a hosted artifact preview) Chrome
+// silently drops downloads (no allow-downloads) and popups (no allow-popups).
+// We can't detect those flags directly, but cross-origin-frame containment is
+// a reliable proxy - used to set honest expectations in the UI.
+let SANDBOXED = false;
+try { SANDBOXED = window.self !== window.top && !window.top.location.href; }
+catch (e) { SANDBOXED = true; }
+
 const _blobURLs = {};
 async function loopBlobURL(url, key) {
   if (_blobURLs[key]) return _blobURLs[key];
@@ -443,7 +455,7 @@ async function exportLoop(btn, url, name) {
     document.body.appendChild(a);
     a.click();
     a.remove();
-    flash(btn, 'Saved - check downloads', orig);
+    flash(btn, SANDBOXED ? 'Tried - sandbox may block; see note' : 'Saved - check downloads', orig);
   } catch (e) {
     flash(btn, 'Blocked - try Open raw', orig);
   }
