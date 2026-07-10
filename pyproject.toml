@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "looplab"
+version = "0.1.0"
+description = "Find the most seamless loop hidden in a video of repetitive motion"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Shihan Qu" }]
+keywords = ["video", "loop", "seamless", "cinemagraph", "mlx", "ffmpeg"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Video",
+    "Operating System :: OS Independent",
+]
+dependencies = ["numpy>=1.24"]
+
+[project.optional-dependencies]
+mlx = ["mlx>=0.5"]
+explorer = ["pillow>=10", "matplotlib>=3.7"]
+all = ["looplab[mlx,explorer]"]
+
+[project.scripts]
+looplab = "looplab.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/shihanqu/looplab"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+looplab = ["artifact_template.html"]

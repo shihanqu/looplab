@@ -1,0 +1,440 @@
+<title>Loop Seam Explorer</title>
+<style>
+  :root {
+    --bg: #f5f2ec; --panel: #fbf9f5; --well: #1b181d; --ink: #26222a;
+    --muted: #6f6878; --line: #e2dcd2; --accent: #d96a52; --accent-ink: #b34a35;
+    --chip: #eee9e0; --good: #d9a13f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17151a; --panel: #201d24; --well: #121014; --ink: #ece7df;
+      --muted: #8f8798; --line: #322e38; --accent: #e07a63; --accent-ink: #f0977f;
+      --chip: #2a2630; --good: #e3b45a;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f5f2ec; --panel: #fbf9f5; --well: #1b181d; --ink: #26222a;
+    --muted: #6f6878; --line: #e2dcd2; --accent: #d96a52; --accent-ink: #b34a35;
+    --chip: #eee9e0; --good: #d9a13f;
+  }
+  :root[data-theme="dark"] {
+    --bg: #17151a; --panel: #201d24; --well: #121014; --ink: #ece7df;
+    --muted: #8f8798; --line: #322e38; --accent: #e07a63; --accent-ink: #f0977f;
+    --chip: #2a2630; --good: #e3b45a;
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--ink);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 28px 24px 64px; }
+  .eyebrow { font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--muted); margin: 0 0 6px; }
+  h1 { font-family: "Avenir Next", Avenir, Futura, system-ui, sans-serif;
+    font-weight: 600; font-size: 26px; margin: 0 0 4px; text-wrap: balance; }
+  .sub { color: var(--muted); margin: 0 0 22px; max-width: 68ch; }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-variant-numeric: tabular-nums; }
+
+  .readout { display: flex; flex-wrap: wrap; gap: 10px 26px; align-items: baseline;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 12px 18px; margin-bottom: 10px; }
+  .readout .f { display: flex; gap: 8px; align-items: baseline; }
+  .readout .k { font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--muted); }
+  .readout .v { font-size: 15px; }
+  .qbar { width: 120px; height: 6px; border-radius: 3px; background: var(--chip);
+    overflow: hidden; align-self: center; }
+  .qbar i { display: block; height: 100%; background: var(--good); width: 0; }
+
+  .mapwell { background: var(--well); border-radius: 10px; padding: 14px 14px 8px;
+    border: 1px solid var(--line); }
+  .scroller { overflow-x: auto; }
+  .stack { position: relative; min-width: 1100px; }
+  canvas { display: block; width: 100%; }
+  #overlay { position: absolute; inset: 0; cursor: crosshair; }
+  .maplegend { display: flex; gap: 18px; align-items: center; padding: 8px 4px 4px;
+    color: #a99f92; font-size: 12px; }
+  .ramp { width: 140px; height: 8px; border-radius: 4px;
+    background: linear-gradient(90deg,#000004,#3b0f70,#8c2981,#de4968,#fe9f6d,#fcfdbf); }
+  .axis { display: flex; justify-content: space-between; color: #a99f92;
+    font-size: 11px; padding: 2px 4px 6px; }
+
+  h2 { font-family: "Avenir Next", Avenir, Futura, system-ui, sans-serif;
+    font-weight: 600; font-size: 16px; margin: 28px 0 10px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { border: 1px solid var(--line); background: var(--chip); color: var(--ink);
+    border-radius: 999px; padding: 5px 12px; font-size: 13px; cursor: pointer; }
+  .chip:hover { border-color: var(--accent); }
+  .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .chip.sel { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .chip .r { opacity: .65; margin-right: 6px; }
+
+  .detail { display: grid; grid-template-columns: 300px 1fr; gap: 20px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 18px; margin-top: 14px; }
+  @media (max-width: 860px) { .detail { grid-template-columns: 1fr; } }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 14px; }
+  .kv dt { color: var(--muted); font-size: 12px; letter-spacing: .08em;
+    text-transform: uppercase; align-self: baseline; }
+  .kv dd { margin: 0; }
+  .cmdbox { margin-top: 14px; }
+  .cmdbox pre { background: var(--well); color: #e8e2d8; border-radius: 6px;
+    padding: 12px 14px; font-size: 12px; overflow-x: auto; margin: 6px 0 8px;
+    white-space: pre-wrap; word-break: break-all; }
+  button.copy { border: 1px solid var(--line); background: var(--chip); color: var(--ink);
+    border-radius: 6px; padding: 6px 14px; font-size: 13px; cursor: pointer; }
+  button.copy:hover { border-color: var(--accent); }
+  button.copy:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .stripbox img { width: 100%; border-radius: 6px; display: block; }
+  .stripbox video { display: block; width: auto; max-width: 100%; max-height: 460px;
+    margin: 0 auto; border-radius: 6px; background: var(--well); }
+  .stripbox .cap { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  .exportrow { display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+    margin: 10px 0 16px; }
+  a.export { display: inline-block; background: var(--accent); color: #fff;
+    border-radius: 6px; padding: 8px 16px; font-size: 13px; font-weight: 600;
+    text-decoration: none; }
+  a.export:hover { filter: brightness(1.06); }
+  a.export:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .note { color: var(--muted); font-size: 13px; max-width: 78ch; }
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">Video Loop Experimental &mdash; seam search</p>
+  <h1>Loop Seam Explorer</h1>
+  <p class="sub" id="metaline"></p>
+
+  <div class="readout" id="readout">
+    <div class="f"><span class="k">Start</span><span class="v mono" id="r-start">&mdash;</span></div>
+    <div class="f"><span class="k">End</span><span class="v mono" id="r-end">&mdash;</span></div>
+    <div class="f"><span class="k">Length</span><span class="v mono" id="r-len">&mdash;</span></div>
+    <div class="f"><span class="k">Seam quality</span>
+      <span class="qbar"><i id="r-qbar"></i></span>
+      <span class="v mono" id="r-q">&mdash;</span></div>
+    <div class="f"><span class="k" id="r-hint">hover to scrub &middot; click to pin</span></div>
+  </div>
+
+  <div class="mapwell">
+    <div class="scroller">
+      <div class="stack" id="stack">
+        <canvas id="map"></canvas>
+        <canvas id="overlay"></canvas>
+      </div>
+    </div>
+    <div class="axis"><span id="ax0"></span><span>loop start (seconds into source) &mdash; vertical = loop length</span><span id="ax1"></span></div>
+    <div class="maplegend">
+      <span>worse</span><span class="ramp"></span><span>better</span>
+      <span style="margin-left:14px">&#9642; dark cells: gated (low motion, camera disruption, or off-band)</span>
+      <span style="margin-left:14px">&#9702; rings: top candidates</span>
+    </div>
+  </div>
+
+  <h2>Top candidates</h2>
+  <div class="chips" id="chips"></div>
+
+  <div class="detail" id="detail" hidden>
+    <div>
+      <dl class="kv">
+        <dt>Cut</dt><dd class="mono" id="d-cut">&mdash;</dd>
+        <dt>Start</dt><dd class="mono" id="d-start">&mdash;</dd>
+        <dt>End</dt><dd class="mono" id="d-end">&mdash;</dd>
+        <dt>Length</dt><dd class="mono" id="d-len">&mdash;</dd>
+        <dt>Quality</dt><dd class="mono" id="d-q">&mdash;</dd>
+      </dl>
+      <div class="cmdbox">
+        <div class="kv"><dt>Render this loop</dt><dd></dd></div>
+        <pre class="mono" id="d-cmd"></pre>
+        <button class="copy" id="d-copy">Copy command</button>
+      </div>
+    </div>
+    <div class="stripbox" id="d-strip"></div>
+  </div>
+
+  <p class="note" style="margin-top:22px">The map is the banded search space: every pixel is a
+  (start, length) pair scored by how invisibly frame <span class="mono">end</span> can replace
+  frame <span class="mono">start</span> &mdash; position, velocity, and toy-configuration all
+  windowed across the seam. The loop plays start&hellip;end&minus;1, then wraps.</p>
+</div>
+
+<script>
+const DATA = __DATA__;
+
+const N = DATA.n, O = DATA.n_off, FPS = DATA.fps;
+const grid = Uint8Array.from(atob(DATA.grid_b64), c => c.charCodeAt(0));
+const offMin = DATA.off_min;
+
+document.getElementById('metaline').textContent =
+  `${DATA.src} \u2014 ${N} frames @ ${FPS.toFixed(2)} fps \u00b7 loop band ` +
+  `${(offMin/FPS).toFixed(2)}\u2013${((offMin+O-1)/FPS).toFixed(2)} s \u00b7 motion period \u2248 ${DATA.period_s.toFixed(2)} s \u00b7 ` +
+  `${DATA.n_scored.toLocaleString()} seams scored`;
+document.getElementById('ax0').textContent = '0 s';
+document.getElementById('ax1').textContent = (N/FPS).toFixed(1) + ' s';
+
+// magma-ish LUT
+const stops = [[0,0,4],[28,16,68],[79,18,123],[129,37,129],[181,54,122],
+               [229,80,100],[251,135,97],[254,194,135],[252,253,191]];
+const LUT = new Uint8Array(256*3);
+for (let i = 0; i < 256; i++) {
+  const t = i/255*(stops.length-1), a = Math.min(Math.floor(t), stops.length-2), f = t-a;
+  for (let c = 0; c < 3; c++) LUT[i*3+c] = stops[a][c]*(1-f)+stops[a+1][c]*f;
+}
+
+// percentile CDF over scored cells (255 = gated sentinel)
+const hist = new Float64Array(256); let total = 0;
+for (const v of grid) if (v !== 255) { hist[v]++; total++; }
+const cdf = new Float64Array(256); let acc = 0;
+for (let i = 0; i < 256; i++) { acc += hist[i]; cdf[i] = acc/total; }
+
+const map = document.getElementById('map'), ov = document.getElementById('overlay');
+const stack = document.getElementById('stack');
+const CH = 320; // css px height
+let wellColor = '#121014';
+
+function groundColor() {
+  return getComputedStyle(document.documentElement).getPropertyValue('--well').trim() || '#121014';
+}
+const off = document.createElement('canvas');
+off.width = N; off.height = O;
+function paintOffscreen() {
+  const ctx = off.getContext('2d');
+  const img = ctx.createImageData(N, O);
+  const g = wellColor.match(/#(..)(..)(..)/).slice(1).map(h => parseInt(h,16));
+  for (let y = 0; y < O; y++) {         // y=0 top = LONGEST loops
+    const row = O-1-y;                  // grid row 0 = shortest offset
+    for (let x = 0; x < N; x++) {
+      const v = grid[x*O+row], p = (y*N+x)*4;
+      if (v === 255) { img.data[p]=g[0]; img.data[p+1]=g[1]; img.data[p+2]=g[2]; }
+      else { img.data[p]=LUT[v*3]; img.data[p+1]=LUT[v*3+1]; img.data[p+2]=LUT[v*3+2]; }
+      img.data[p+3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+let selected = null;
+function draw() {
+  const dpr = window.devicePixelRatio || 1;
+  const w = stack.clientWidth;
+  for (const c of [map, ov]) {
+    c.width = w*dpr; c.height = CH*dpr;
+    c.style.height = CH+'px';
+  }
+  const ctx = map.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(off, 0, 0, map.width, map.height);
+  // candidate rings
+  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+  ctx.lineWidth = 1.5*dpr;
+  for (const c of DATA.cands) {
+    const x = (c.start_frame + 0.5)/N * map.width;
+    const y = (1 - (c.len_frames - offMin + 0.5)/O) * map.height;
+    ctx.beginPath(); ctx.arc(x, y, 6*dpr, 0, 7); ctx.stroke();
+    if (c.rank <= 5) {
+      ctx.font = `${10*dpr}px ui-monospace, Menlo, monospace`;
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.fillText(c.rank, x + 8*dpr, y - 6*dpr);
+    }
+  }
+  drawCross(selected, true);
+}
+
+function cellAt(ev) {
+  const r = ov.getBoundingClientRect();
+  const fx = (ev.clientX - r.left)/r.width, fy = (ev.clientY - r.top)/r.height;
+  if (fx < 0 || fx >= 1 || fy < 0 || fy >= 1) return null;
+  const s = Math.floor(fx*N);
+  const oi = Math.min(O-1, Math.max(0, Math.floor((1-fy)*O)));
+  return { s, oi };
+}
+
+// Magnetic cursor: one screen pixel spans ~2 frames, so snap to the best
+// cell near the pointer: pointing at a bright ridge should read the ridge.
+function refine(cell, rs = 8, ro = 2) {
+  let best = cell, bv = -1;
+  for (let ds = -rs; ds <= rs; ds++) {
+    const s = cell.s + ds;
+    if (s < 0 || s >= N) continue;
+    for (let d = -ro; d <= ro; d++) {
+      const oi = cell.oi + d;
+      if (oi < 0 || oi >= O) continue;
+      const v = grid[s*O + oi];
+      if (v !== 255 && v > bv) { bv = v; best = { s, oi }; }
+    }
+  }
+  return best;
+}
+function drawCross(cell, keep) {
+  const ctx = ov.getContext('2d');
+  ctx.clearRect(0, 0, ov.width, ov.height);
+  if (!cell) return;
+  const dpr = window.devicePixelRatio || 1;
+  const x = (cell.s + .5)/N*ov.width, y = (1-(cell.oi + .5)/O)*ov.height;
+  const xe = Math.min(1, (cell.s + offMin + cell.oi + .5)/N)*ov.width;
+  ctx.lineWidth = dpr;
+  ctx.strokeStyle = keep ? '#ffffff' : 'rgba(255,255,255,.65)';
+  ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, ov.height); ctx.stroke();
+  ctx.setLineDash([4*dpr, 3*dpr]);
+  ctx.strokeStyle = 'rgba(255,255,255,.45)';
+  ctx.beginPath(); ctx.moveTo(xe, 0); ctx.lineTo(xe, ov.height); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.beginPath(); ctx.arc(x, y, 4*dpr, 0, 7);
+  ctx.fillStyle = '#fff'; ctx.fill();
+}
+
+const fmt = (f) => `${(f/FPS).toFixed(3)}s \u00b7 n=${f}`;
+function showCell(cell) {
+  const e = cell.s + offMin + cell.oi;
+  const v = grid[cell.s*O + cell.oi];
+  set('r-start', fmt(cell.s)); set('r-end', fmt(e));
+  set('r-len', ((offMin+cell.oi)/FPS).toFixed(3) + 's');
+  if (v === 255) { set('r-q', 'gated'); qbar(0); }
+  else { const pct = (1-cdf[v])*100;
+    set('r-q', 'top ' + (pct < 0.1 ? pct.toFixed(2) : pct.toFixed(1)) + '%');
+    qbar(Math.max(.03, v / 254)); }  // bar mirrors the heatmap's color value
+}
+function set(id, t) { document.getElementById(id).textContent = t; }
+function qbar(f) { document.getElementById('r-qbar').style.width = (f*100)+'%'; }
+
+ov.addEventListener('mousemove', ev => {
+  const c = cellAt(ev); if (!c) return;
+  const r = refine(c);
+  showCell(r);
+  drawCross(selected ?? r, !!selected);
+});
+ov.addEventListener('mouseleave', () => drawCross(selected, true));
+ov.addEventListener('click', ev => {
+  const c = cellAt(ev); if (!c) return;
+  const r = refine(c);
+  selected = r; showCell(r); drawCross(r, true);
+  const match = DATA.cands.find(k => k.start_frame === r.s && (k.len_frames-offMin) === r.oi)
+    || nearestCand(r);
+  openDetail(r, match);
+});
+function nearestCand(c) {
+  let best = null, bd = 1e9;
+  for (const k of DATA.cands) {
+    const d = Math.abs(k.start_frame-c.s) + Math.abs(k.len_frames-offMin-c.oi)*4;
+    if (d < bd) { bd = d; best = k; }
+  }
+  return bd <= 24 ? best : null;
+}
+
+const chips = document.getElementById('chips');
+DATA.cands.forEach(c => {
+  const b = document.createElement('button');
+  b.className = 'chip mono';
+  b.innerHTML = `<span class="r">#${c.rank}</span>${c.start_s.toFixed(2)}\u2192${c.end_s.toFixed(2)}s \u00b7 ${c.len_s.toFixed(2)}s`;
+  b.addEventListener('click', () => {
+    selected = { s: c.start_frame, oi: c.len_frames - offMin };
+    showCell(selected); drawCross(selected, true); openDetail(selected, c);
+    document.querySelectorAll('.chip').forEach(x => x.classList.remove('sel'));
+    b.classList.add('sel');
+  });
+  chips.appendChild(b);
+});
+
+function openDetail(cell, cand) {
+  const d = document.getElementById('detail'); d.hidden = false;
+  const s = cell.s, e = s + offMin + cell.oi;
+  set('d-cut', cand ? `candidate #${cand.rank}` : 'custom cell');
+  set('d-start', fmt(s)); set('d-end', fmt(e));
+  set('d-len', ((e-s)/FPS).toFixed(3) + 's \u00b7 ' + (e-s) + ' frames');
+  const v = grid[s*O+cell.oi];
+  set('d-q', v === 255 ? 'gated' : 'top ' + ((1-cdf[v])*100).toFixed(2) + '% of ' + DATA.n_scored.toLocaleString());
+  const cmd = `ffmpeg -i "${DATA.src}" -vf "select='between(n,${s},${e-1})',setpts=N/${Math.round(FPS)}/TB" -an -c:v libx264 -crf 18 -pix_fmt yuv420p loop_${s}_${e}.mp4`;
+  set('d-cmd', cmd);
+  const box = document.getElementById('d-strip');
+  const asset = cand && DATA.assets ? DATA.assets[cand.rank] : null;
+  let html = '';
+  if (asset && asset.preview) {
+    html += `<video src="${asset.preview}" loop autoplay muted playsinline controls
+        aria-label="looping preview of candidate ${cand.rank}"></video>
+      <p class="cap">Rendered cut \u2014 seam-true playback.</p>`;
+  } else if (DATA.scrub) {
+    html += `<video class="scrubv" muted playsinline controls
+        aria-label="segment preview of the selected cell"></video>
+      <p class="cap">Segment preview by in-player seeking \u2014 the wrap can hitch slightly
+      here even when the seam is perfect; the rendered cut (command below) is the true seam.</p>`;
+  }
+  if (asset && asset.export) {
+    html += `<div class="exportrow">
+        <a class="export" download="${asset.name}" href="${asset.export}">Export loop (MP4)</a>
+        <span class="cap">${DATA.mode === 'artifact'
+          ? 'embedded encode (CRF 23) \u2014 the command below cuts source-grade'
+          : 'full-quality cut from the source'}</span>
+      </div>`;
+  }
+  if (cand && DATA.strips[cand.rank]) {
+    html += `<img alt="frames across the seam of candidate ${cand.rank}"
+      src="data:image/jpeg;base64,${DATA.strips[cand.rank]}">
+      <p class="cap">Played order across the wrap: the three frames before the cut, then the
+      three the loop jumps back to. If you can't find the cyan line without looking, the seam works.</p>`;
+  }
+  if (!html) {
+    html = `<p class="cap">No pre-rendered preview for this cell \u2014 use the command to
+    render and judge it in motion.</p>`;
+  }
+  box.innerHTML = html;
+  const sv = box.querySelector('.scrubv');
+  if (sv) getScrubURL().then(u => {
+    if (!sv.isConnected) return;
+    sv.src = u;
+    segmentLoop(sv, s / FPS, e / FPS);
+  });
+}
+
+// The scrub source plays from a blob/data URL so it is fully seekable even
+// when served without HTTP Range support (python http.server, file://).
+let scrubURL = null, scrubLoading = null;
+function getScrubURL() {
+  if (scrubURL) return Promise.resolve(scrubURL);
+  if (DATA.scrub.startsWith('data:')) return Promise.resolve((scrubURL = DATA.scrub));
+  scrubLoading ??= fetch(DATA.scrub)
+    .then(r => r.blob())
+    .then(b => (scrubURL = URL.createObjectURL(b)));
+  return scrubLoading;
+}
+
+// Loop an arbitrary [t0, t1) segment of the whole-video proxy by seeking back
+// each time the end is reached, checked once per displayed frame.
+function segmentLoop(el, t0, t1) {
+  el.muted = true;  // property, not just attribute — keeps programmatic play() allowed
+  const toStart = () => { el.currentTime = t0; };
+  if (el.readyState >= 1) toStart();
+  else el.addEventListener('loadedmetadata', toStart, { once: true });
+  // play only after the initial seek settles: Chrome aborts a play() that is
+  // still pending when a seek arrives
+  el.addEventListener('canplay', () => {
+    if (el.currentTime < t0 - 0.3 || el.currentTime >= t1) toStart();
+    el.play().catch(() => {});
+  }, { once: true });
+  if (el.readyState >= 3) el.play().catch(() => {});
+  const step = () => {
+    if (!el.isConnected) return;
+    if (el.currentTime >= t1 - 0.017) el.currentTime = t0;
+    if (el.requestVideoFrameCallback) el.requestVideoFrameCallback(() => step());
+    else requestAnimationFrame(step);
+  };
+  step();
+}
+document.getElementById('d-copy').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(document.getElementById('d-cmd').textContent);
+    document.getElementById('d-copy').textContent = 'Copied';
+    setTimeout(() => document.getElementById('d-copy').textContent = 'Copy command', 1200);
+  } catch {}
+});
+
+// Chrome suspends muted playback in hidden tabs and does not resume it —
+// restart the active preview when the tab becomes visible again.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  const v = document.querySelector('#d-strip video');
+  if (v && v.paused && !v.ended) v.play().catch(() => {});
+});
+
+function repaint() { wellColor = groundColor(); paintOffscreen(); draw(); }
+new MutationObserver(repaint).observe(document.documentElement,
+  { attributes: true, attributeFilter: ['data-theme'] });
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', repaint);
+addEventListener('resize', draw);
+repaint();
+</script>

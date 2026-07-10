@@ -1,0 +1,11 @@
+__pycache__/
+*.egg-info/
+build/
+dist/
+.venv/
+.DS_Store
+
+# session outputs / analysis artifacts
+out/
+*.looplab/
+*.loop.mp4
