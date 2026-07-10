@@ -96,6 +96,9 @@
   .export:hover { filter: brightness(1.06); }
   .export:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .export[disabled] { opacity: .7; cursor: default; }
+  .export.ghost { background: var(--chip); color: var(--ink);
+    border: 1px solid var(--line); font-weight: 400; }
+  .export.ghost:hover { border-color: var(--accent); filter: none; }
   .note { color: var(--muted); font-size: 13px; max-width: 78ch; }
 </style>
 
@@ -368,6 +371,7 @@ function openDetail(cell, cand) {
   if (asset && asset.export) {
     html += `<div class="exportrow">
         <button type="button" class="export">Export loop (MP4)</button>
+        <button type="button" class="export ghost openraw">Open raw video</button>
         <span class="cap">${DATA.mode === 'artifact'
           ? 'embedded encode (CRF 23) \u2014 the command below cuts source-grade'
           : 'full-quality cut from the source'}</span>
@@ -390,36 +394,71 @@ function openDetail(cell, cand) {
     sv.src = u;
     segmentLoop(sv, s / FPS, e / FPS);
   });
-  const exp = box.querySelector('.export');
+  const exp = box.querySelector('.export:not(.openraw)');
+  const raw = box.querySelector('.openraw');
   if (exp && asset && asset.export)
     exp.addEventListener('click', () => exportLoop(exp, asset.export, asset.name));
+  if (raw && asset && asset.export)
+    raw.addEventListener('click', () => openRaw(raw, asset.export, asset.name));
 }
 
-// Download the loop. Browsers ignore <a download> for data: URLs (treated as
-// cross-origin) and just try to navigate — which the artifact's sandboxed
-// iframe blocks silently. Fetching into a same-origin blob: URL makes the
-// download attribute work; if the sandbox blocks downloads entirely, fall
-// back to opening the clip in a new tab so it can be saved manually.
+// Exporting from a strict-CSP sandbox needs care on two fronts:
+//  - fetch() of a data: URL is governed by connect-src and gets blocked here,
+//    so embedded videos are decoded to a Blob in pure JS (atob) instead;
+//  - <a download href="data:..."> is ignored by browsers (cross-origin rule)
+//    and Chrome categorically blocks top-level data: navigation, so every
+//    hand-off to the browser goes through a same-origin blob: URL.
+function dataURIToBlob(uri) {
+  const comma = uri.indexOf(',');
+  const mime = uri.slice(5, comma).split(';')[0] || 'application/octet-stream';
+  const bin = atob(uri.slice(comma + 1));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
+}
+
+const _blobURLs = {};
+async function loopBlobURL(url, key) {
+  if (_blobURLs[key]) return _blobURLs[key];
+  const blob = url.startsWith('data:') ? dataURIToBlob(url)
+                                       : await (await fetch(url)).blob();
+  _blobURLs[key] = URL.createObjectURL(blob);
+  return _blobURLs[key];
+}
+
+function flash(btn, text, orig) {
+  btn.textContent = text;
+  setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 3200);
+}
+
 async function exportLoop(btn, url, name) {
   const orig = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Preparing...';
   try {
-    const blob = await (await fetch(url)).blob();
-    const obj = URL.createObjectURL(blob);
+    const obj = await loopBlobURL(url, name);
     const a = document.createElement('a');
     a.href = obj;
     a.download = name || 'loop.mp4';
     document.body.appendChild(a);
     a.click();
     a.remove();
-    setTimeout(() => URL.revokeObjectURL(obj), 15000);
-    btn.textContent = 'Saved';
+    flash(btn, 'Saved - check downloads', orig);
   } catch (e) {
-    try { window.open(url, '_blank'); btn.textContent = 'Opened in new tab'; }
-    catch (_) { btn.textContent = 'Download blocked'; }
+    flash(btn, 'Blocked - try Open raw', orig);
   }
-  setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 2500);
+}
+
+async function openRaw(btn, url, name) {
+  const orig = btn.textContent;
+  btn.disabled = true;
+  try {
+    const obj = await loopBlobURL(url, name);
+    const w = window.open(obj, '_blank');
+    flash(btn, w ? 'Opened - save from that tab' : 'Popup blocked - use the command below', orig);
+  } catch (e) {
+    flash(btn, 'Blocked - use the command below', orig);
+  }
 }
 
 // The scrub source plays from a blob/data URL so it is fully seekable even
