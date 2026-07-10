@@ -17,7 +17,7 @@ The user has a video of a **repetitive motion from a static camera** and wants a
 pip install 'looplab[all] @ git+https://github.com/shihanqu/looplab'
 ```
 
-MLX accelerates on Apple Silicon automatically; elsewhere it runs on numpy (slower, same results).
+Backends auto-select: MLX on Apple Silicon, CuPy on NVIDIA (`pip install 'looplab[nvidia]'`; designed in but untested on real CUDA hardware), numpy elsewhere — slower, same results. Force one with `LOOPLAB_BACKEND=mlx|cupy|numpy`; the JSON reports which ran in `backend`. GPU out-of-memory exits 3 with a hint — retry with `--proxy-long 256` or `LOOPLAB_BACKEND=numpy`.
 
 ## Canonical invocation
 

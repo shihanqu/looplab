@@ -97,6 +97,14 @@ def main(argv=None) -> int:
     except subprocess.CalledProcessError as e:
         detail = (e.stderr or b"").decode(errors="replace").strip()[-400:]
         return _fail(args, 4, f"ffmpeg could not read the input: {detail}")
+    except RuntimeError as e:  # backend selection / configuration
+        return _fail(args, 3, str(e))
+    except Exception as e:
+        if isinstance(e, MemoryError) or "OutOfMemory" in type(e).__name__:
+            return _fail(args, 3,
+                         "out of (GPU) memory — retry with --proxy-long 256 "
+                         "or LOOPLAB_BACKEND=numpy")
+        raise
 
     workdir = Path(args.workdir) if args.workdir else src.with_suffix(
         src.suffix + ".looplab")

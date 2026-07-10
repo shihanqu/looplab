@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "looplab"
-version = "0.1.0"
+version = "0.2.0"
 description = "Find the most seamless loop hidden in a video of repetitive motion"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -19,7 +19,8 @@ classifiers = [
 dependencies = ["numpy>=1.24"]
 
 [project.optional-dependencies]
-mlx = ["mlx>=0.5"]
+mlx = ["mlx>=0.5; platform_system == 'Darwin' and platform_machine == 'arm64'"]
+nvidia = ["cupy-cuda12x>=12"]
 explorer = ["pillow>=10", "matplotlib>=3.7"]
 all = ["looplab[mlx,explorer]"]
 

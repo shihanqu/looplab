@@ -25,7 +25,13 @@ Each stream is evaluated over a **±K-frame window along the seam diagonal** (co
 - **Activity** — a frozen or occluded stretch loops "perfectly" and shows nothing; loops must contain real motion relative to the video's median.
 - **Disruption exclusion** — sustained framing anomalies (camera bumps, subject leaving frame) are auto-detected via MAD z-scores against the temporal median frame and excluded, while brief motion-blur spikes are kept as legitimate content.
 
-The search is exhaustive over a **banded (start × length) space** — every start frame × every loop length within `[--min-loop, --max-loop]`. Cost is one video decode plus one banded distance computation, `O(N · B · d)`: a minute of 30 fps video is ~150k scored pairs and runs in seconds. Math executes on **MLX** (Apple Silicon GPU, unified memory) when available and falls back to numpy transparently.
+The search is exhaustive over a **banded (start × length) space** — every start frame × every loop length within `[--min-loop, --max-loop]`. Cost is one video decode plus one banded distance computation, `O(N · B · d)`: a minute of 30 fps video is ~150k scored pairs and runs in seconds.
+
+**Backends** — picked automatically, forceable with `LOOPLAB_BACKEND=mlx|cupy|numpy`:
+
+- **MLX** — Apple Silicon GPU via unified memory. Developed and tested here.
+- **CUDA via CuPy** — NVIDIA GPUs (`pip install 'looplab[nvidia]'`). *Designed in but currently untested on real hardware*: CuPy shares the numpy code path verbatim (same array API), which is verified, but no CUDA device has run it yet — reports and fixes welcome. On ≤8 GB cards use `--proxy-long 256` to fit the working set.
+- **numpy** — runs everywhere, same results, just slower.
 
 ## Install
 
@@ -37,7 +43,7 @@ pip install 'looplab[all] @ git+https://github.com/shihanqu/looplab'
 pip install 'looplab @ git+https://github.com/shihanqu/looplab'
 ```
 
-Extras: `mlx` (Apple Silicon acceleration), `explorer` (interactive heatmap UI, strips, heatmap.png).
+Extras: `mlx` (Apple Silicon acceleration; skipped automatically on other platforms), `nvidia` (CuPy/CUDA 12 — untested, see Backends above), `explorer` (interactive heatmap UI, strips, heatmap.png).
 
 ## CLI
 

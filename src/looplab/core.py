@@ -13,6 +13,7 @@ and falls back to numpy transparently.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import time
@@ -21,13 +22,49 @@ from pathlib import Path
 
 import numpy as np
 
-try:
-    import mlx.core as mx
+_BACKEND: tuple[str, object] | None = None
 
-    HAVE_MLX = True
-except ImportError:  # pragma: no cover - environment dependent
-    mx = None
-    HAVE_MLX = False
+
+def get_backend() -> tuple[str, object]:
+    """Pick the compute backend once: mlx (Apple Silicon) > cupy (NVIDIA CUDA)
+    > numpy. Override with LOOPLAB_BACKEND=mlx|cupy|numpy — forcing an
+    unavailable backend raises instead of silently falling back."""
+    global _BACKEND
+    if _BACKEND is not None:
+        return _BACKEND
+    forced = os.environ.get("LOOPLAB_BACKEND", "").strip().lower() or None
+    if forced not in (None, "mlx", "cupy", "numpy"):
+        raise RuntimeError(
+            f"LOOPLAB_BACKEND must be mlx, cupy, or numpy (got {forced!r})")
+
+    if forced in (None, "mlx"):
+        try:
+            import mlx.core as mx_mod
+            _BACKEND = ("mlx", mx_mod)
+            return _BACKEND
+        except ImportError as e:
+            if forced == "mlx":
+                raise RuntimeError(
+                    "LOOPLAB_BACKEND=mlx but mlx is not installed "
+                    "(pip install 'looplab[mlx]', Apple Silicon only)") from e
+
+    if forced in (None, "cupy"):
+        cp_mod, count = None, 0
+        try:
+            import cupy as cp_mod
+            count = cp_mod.cuda.runtime.getDeviceCount()
+        except Exception as e:
+            if forced == "cupy":
+                raise RuntimeError(
+                    f"LOOPLAB_BACKEND=cupy but CUDA is unavailable: {e}") from e
+        if cp_mod is not None and count > 0:
+            _BACKEND = ("cupy", cp_mod)
+            return _BACKEND
+        if forced == "cupy":
+            raise RuntimeError("LOOPLAB_BACKEND=cupy but no CUDA device was found")
+
+    _BACKEND = ("numpy", np)
+    return _BACKEND
 
 
 def log_stderr(msg: str) -> None:
@@ -121,18 +158,19 @@ def variance_weights(frames: np.ndarray, gamma: float) -> np.ndarray:
     return (w / w.mean()).astype(np.float32)
 
 
-def _focus_stream_np(frames: np.ndarray):
-    xr = frames.astype(np.float32) / 255.0
+def _focus_stream_xp(frames: np.ndarray, xp):
+    """Bright-object masked luma; xp is numpy or cupy (same array API)."""
+    xr = xp.asarray(frames).astype(xp.float32) / 255.0
     y = xr[..., 0] * 0.299 + xr[..., 1] * 0.587 + xr[..., 2] * 0.114
     cmax = xr.max(axis=-1)
     cmin = xr.min(axis=-1)
     sat = (cmax - cmin) / (cmax + 1e-6)
-    m = np.clip((y - 0.55) / 0.20, 0.0, 1.0) * np.clip((0.35 - sat) / 0.35, 0.0, 1.0)
-    t = (y * m).reshape(frames.shape[0], -1)
-    return t.astype(np.float32), float((m > 0.5).mean())
+    m = xp.clip((y - 0.55) / 0.20, 0.0, 1.0) * xp.clip((0.35 - sat) / 0.35, 0.0, 1.0)
+    t = (y * m).reshape(frames.shape[0], -1).astype(xp.float32)
+    return t, float((m > 0.5).mean())
 
 
-def _focus_stream_mx(frames: np.ndarray):
+def _focus_stream_mx(frames: np.ndarray, mx):
     n = frames.shape[0]
     xr = mx.array(frames).astype(mx.float32) * (1.0 / 255.0)
     y = xr[..., 0] * 0.299 + xr[..., 1] * 0.587 + xr[..., 2] * 0.114
@@ -151,19 +189,25 @@ def band_distances(frames: np.ndarray, offsets: np.ndarray, weights: np.ndarray,
     position (variance-weighted RGB), velocity (central difference), and the
     bright-object 'focus' stream (luma masked to bright, unsaturated pixels —
     the moving prop in a fidget video). NaN where start+offset runs off the end.
+
+    Backends: MLX has its own path (different API); numpy and CuPy share one
+    generic path, so the CUDA code is structurally identical to the tested
+    CPU code.
     """
+    backend, mod = get_backend()
     n = frames.shape[0]
     n_off = len(offsets)
     out = {k: np.full((n, n_off), np.nan, np.float32)
            for k in ("position", "velocity", "focus")}
 
-    if HAVE_MLX:
+    if backend == "mlx":
+        mx = mod
         x = mx.array(frames).reshape(n, -1).astype(mx.float32) * (1.0 / 255.0)
         x = x - mx.mean(x, axis=1, keepdims=True)
         x = x * mx.array(np.sqrt(weights))
         v = mx.concatenate([x[1:2] - x[0:1], (x[2:] - x[:-2]) * 0.5,
                             x[-1:] - x[-2:-1]], axis=0)
-        t, cov = _focus_stream_mx(frames) if use_focus else (None, 0.0)
+        t, cov = _focus_stream_mx(frames, mx) if use_focus else (None, 0.0)
         if use_focus:
             log(f"[focus] bright-object mask covers {cov * 100:.1f}% of pixels")
         for i, o in enumerate(offsets):
@@ -181,23 +225,26 @@ def band_distances(frames: np.ndarray, offsets: np.ndarray, weights: np.ndarray,
                 out["focus"][: n - o, i] = np.array(et)
         return out
 
-    x = frames.reshape(n, -1).astype(np.float32) / 255.0
+    # numpy and cupy share this path; asnumpy is identity for numpy
+    xp = mod
+    asnumpy = (lambda a: a) if backend == "numpy" else xp.asnumpy
+    x = xp.asarray(frames).reshape(n, -1).astype(xp.float32) / 255.0
     x -= x.mean(axis=1, keepdims=True)
-    x *= np.sqrt(weights)
-    v = np.concatenate([x[1:2] - x[0:1], (x[2:] - x[:-2]) * 0.5,
+    x *= xp.asarray(np.sqrt(weights))
+    v = xp.concatenate([x[1:2] - x[0:1], (x[2:] - x[:-2]) * 0.5,
                         x[-1:] - x[-2:-1]], axis=0)
-    t, cov = _focus_stream_np(frames) if use_focus else (None, 0.0)
+    t, cov = _focus_stream_xp(frames, xp) if use_focus else (None, 0.0)
     if use_focus:
         log(f"[focus] bright-object mask covers {cov * 100:.1f}% of pixels")
     for i, o in enumerate(offsets):
         o = int(o)
         d = x[o:] - x[:-o]
-        out["position"][: n - o, i] = np.mean(d * d, axis=1)
+        out["position"][: n - o, i] = asnumpy(xp.mean(d * d, axis=1))
         d = v[o:] - v[:-o]
-        out["velocity"][: n - o, i] = np.mean(d * d, axis=1)
+        out["velocity"][: n - o, i] = asnumpy(xp.mean(d * d, axis=1))
         if use_focus:
             d = t[o:] - t[:-o]
-            out["focus"][: n - o, i] = np.mean(d * d, axis=1)
+            out["focus"][: n - o, i] = asnumpy(xp.mean(d * d, axis=1))
     return out
 
 
@@ -380,10 +427,11 @@ def run_search(src: str, params: SearchParams | None = None,
 
     n_valid = int(np.count_nonzero(~np.isnan(s_win)))
     n_kept = int(np.count_nonzero(~np.isnan(s_gated)))
+    backend = get_backend()[0]
     log(f"[score] band {offsets[0]}..{offsets[-1]} frames "
         f"({offsets[0] / fps:.2f}..{offsets[-1] / fps:.2f}s), "
         f"{n_valid} pairs scored, {n_valid - n_kept} gated "
-        f"({time.time() - t0:.1f}s, backend={'mlx' if HAVE_MLX else 'numpy'})")
+        f"({time.time() - t0:.1f}s, backend={backend})")
 
     cands = pick_candidates(s_gated, activity, offsets, fps,
                             params.top, params.nms)
@@ -393,7 +441,7 @@ def run_search(src: str, params: SearchParams | None = None,
         exclude=exclude, excluded_runs=bad_runs,
         period_s=period, quarter_periods_s=quarters,
         candidates=cands, params=params,
-        backend="mlx" if HAVE_MLX else "numpy",
+        backend=backend,
     )
 
 
