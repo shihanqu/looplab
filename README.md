@@ -6,11 +6,13 @@ Find the most seamless loop hidden in a video of repetitive motion — and cut i
 looplab input.mp4        # → input.loop.mp4, the best wrap point in the footage
 ```
 
+![looplab turning a clip into a seamless loop](docs/usage.gif)
+
 Point it at footage of anything cyclic — a fidget toy, a pendulum, pouring, spinning, kneading — and looplab scores **every possible (start, end) cut pair** for how invisibly the video can wrap from its last frame back to its first, then renders the winner.
 
 ![seam-quality heatmap](docs/heatmap.png)
 
-Every pixel above is one candidate loop (start time × loop length); bright ridges are cuts that flow. looplab finds them exhaustively, not by sampling.
+Every pixel above is one candidate loop (start time × loop length); bright ridges are cuts that flow. looplab finds them exhaustively, not by sampling — the interactive version of this map (`--explore`) lets you scrub and preview every one.
 
 ## How it works
 
