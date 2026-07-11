@@ -8,11 +8,7 @@ looplab input.mp4        # → input.loop.mp4, the best wrap point in the footag
 
 ![the looplab explorer: open a video with the OS file picker, scrub the seam heatmap, preview and export loops](docs/usage.gif)
 
-Point it at footage of anything cyclic — a fidget toy, a pendulum, pouring, spinning, kneading — and looplab scores **every possible (start, end) cut pair** for how invisibly the video can wrap from its last frame back to its first, then renders the winner.
-
-![seam-quality heatmap](docs/heatmap.png)
-
-Every pixel above is one candidate loop (start time × loop length); bright ridges are cuts that flow. looplab finds them exhaustively, not by sampling — the interactive version of this map (`--explore`) lets you scrub and preview every one.
+Point it at footage of anything cyclic — a fidget toy, a pendulum, pouring, spinning, kneading — and looplab scores **every possible (start, end) cut pair** for how invisibly the video can wrap from its last frame back to its first, then renders the winner. The explorer above maps that entire search space: each pixel is one candidate loop (start time × loop length), and the bright ridges are the cuts that flow — hover, preview, and export any of them, not just the top pick.
 
 ## How it works
 
