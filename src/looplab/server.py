@@ -151,15 +151,22 @@ TOOLBAR = """
   <div style="display:flex;gap:12px;align-items:center;padding:9px 24px;flex-wrap:wrap">
     <strong style="letter-spacing:.06em">looplab</strong>
     <button id="ll-open" class="ll-btn ll-accent">Open video&hellip;</button>
-    <button id="ll-params" class="ll-btn">Params</button>
+    <button id="ll-params" class="ll-btn ll-icon" title="Analysis settings"
+      aria-label="Analysis settings" aria-expanded="false">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+        <line x1="3" y1="6" x2="21" y2="6"/><circle cx="9" cy="6" r="2.7"/>
+        <line x1="3" y1="12" x2="21" y2="12"/><circle cx="15" cy="12" r="2.7"/>
+        <line x1="3" y1="18" x2="21" y2="18"/><circle cx="7" cy="18" r="2.7"/>
+      </svg>
+    </button>
     <button id="ll-crop" class="ll-btn">Crop</button>
     <button id="ll-rerun" class="ll-btn" hidden>Re-analyze</button>
     <span id="ll-status" style="color:#8f8798;font-family:ui-monospace,Menlo,monospace;
       font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
       max-width:46ch"></span>
   </div>
-  <div id="ll-panel" hidden style="padding:10px 24px 14px;border-top:1px solid #2a2630;
-    display:flex;gap:18px;flex-wrap:wrap;align-items:end">
+  <div id="ll-panel">
     <label class="ll-f">min loop (s)<input id="p-min_loop" type="number" step="0.1" min="0.1"></label>
     <label class="ll-f">max loop (s)<input id="p-max_loop" type="number" step="0.5" min="0.2"></label>
     <label class="ll-f">proxy px<select id="p-proxy_long">
@@ -200,6 +207,13 @@ TOOLBAR = """
     text-transform:uppercase; letter-spacing:.08em; }
   .ll-f input, .ll-f select { width:96px; background:#1d1a21; color:#ece7df;
     border:1px solid #4a4452; border-radius:5px; padding:5px 7px; font:13px ui-monospace,Menlo,monospace; }
+  .ll-icon { display:inline-flex; align-items:center; padding:6px 9px; }
+  .ll-icon.on { background:#e07a63; border-color:#e07a63; color:#fff; }
+  #ll-panel { display:none; padding:10px 24px 14px; border-top:1px solid #2a2630;
+    gap:18px; flex-wrap:wrap; align-items:end; }
+  #ll-panel.open { display:flex; animation:llslide .16s ease-out; }
+  @keyframes llslide { from { opacity:0; transform:translateY(-5px); } }
+  @media (prefers-reduced-motion: reduce) { #ll-panel.open { animation:none; } }
 </style>
 <script>
 (function () {
@@ -230,7 +244,10 @@ TOOLBAR = """
     localStorage.removeItem('ll-params'); llCrop = null; loadParams(); updateCropLabel();
   });
   $('ll-params').addEventListener('click', () => {
-    $('ll-panel').hidden = !$('ll-panel').hidden; $('ll-croppanel').hidden = true;
+    const open = $('ll-panel').classList.toggle('open');
+    $('ll-params').classList.toggle('on', open);
+    $('ll-params').setAttribute('aria-expanded', String(open));
+    $('ll-croppanel').hidden = true;
   });
 
   // ---- crop picker ----
@@ -262,7 +279,10 @@ TOOLBAR = """
     const s = await (await fetch('/status')).json();
     const video = lastVideo || s.video;
     if (!video) { st.textContent = 'open a video first, then set the crop'; return; }
-    $('ll-croppanel').hidden = !$('ll-croppanel').hidden; $('ll-panel').hidden = true;
+    $('ll-croppanel').hidden = !$('ll-croppanel').hidden;
+    $('ll-panel').classList.remove('open');
+    $('ll-params').classList.remove('on');
+    $('ll-params').setAttribute('aria-expanded', 'false');
     if ($('ll-croppanel').hidden || posterImg) { drawCrop(); return; }
     const img = new Image();
     img.onload = () => {
@@ -355,9 +375,9 @@ __TOOLBAR__
   <p style="color:#8f8798">Open a video of repetitive motion (a fidget toy, a pendulum,
   pouring, spinning). looplab scores every possible cut pair, then opens an
   interactive heatmap of the whole search space with previews and exports.</p>
-  <p style="color:#8f8798">Tune the search under <b>Params</b>, restrict it to a
-  region with <b>Crop</b>. Everything runs locally; the file never leaves this
-  machine.</p>
+  <p style="color:#8f8798">Tune the search with the sliders button, restrict it
+  to a region with <b>Crop</b>. Everything runs locally; the file never leaves
+  this machine.</p>
 </div>
 """
 
