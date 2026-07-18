@@ -57,6 +57,12 @@
     background: linear-gradient(90deg,#000004,#3b0f70,#8c2981,#de4968,#fe9f6d,#fcfdbf); }
   .axis { display: flex; justify-content: space-between; color: #a99f92;
     font-size: 11px; padding: 2px 4px 6px; }
+  .zbtn { margin-left: auto; background: #2a2630; color: #d8d2c8;
+    border: 1px solid #4a4452; border-radius: 5px; padding: 3px 10px;
+    font: 600 11px ui-monospace, Menlo, monospace; cursor: pointer; }
+  .zbtn:hover { border-color: #e07a63; }
+  .zbtn:focus-visible { outline: 2px solid #e07a63; outline-offset: 2px; }
+  .zbtn.on { background: #e07a63; border-color: #e07a63; color: #fff; }
 
   h2 { font-family: "Avenir Next", Avenir, Futura, system-ui, sans-serif;
     font-weight: 600; font-size: 16px; margin: 28px 0 10px; }
@@ -129,6 +135,7 @@
       <span>worse</span><span class="ramp"></span><span>better</span>
       <span style="margin-left:14px">&#9642; dark cells: gated (low motion, camera disruption, or off-band)</span>
       <span style="margin-left:14px">&#9702; rings: top candidates</span>
+      <button id="zoom11" class="zbtn" title="one heatmap pixel per source frame">1:1</button>
     </div>
   </div>
 
@@ -520,6 +527,25 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
   const v = document.querySelector('#d-strip video');
   if (v && v.paused && !v.ended) v.play().catch(() => {});
+});
+
+// 1:1 zoom: one heatmap column per source frame, scrolled horizontally.
+// Fit mode (default) squeezes the whole timeline into the panel width.
+let oneToOne = false;
+document.getElementById('zoom11').addEventListener('click', () => {
+  oneToOne = !oneToOne;
+  const b = document.getElementById('zoom11');
+  b.classList.toggle('on', oneToOne);
+  b.textContent = oneToOne ? '1:1 (scroll)' : '1:1';
+  stack.style.width = oneToOne ? N + 'px' : '';
+  stack.style.minWidth = oneToOne ? N + 'px' : '';
+  draw();
+  if (oneToOne) {
+    const sc = document.querySelector('.scroller');
+    const target = (selected ? selected.s
+      : (DATA.cands[0] ? DATA.cands[0].start_frame : 0));
+    sc.scrollLeft = Math.max(0, target - sc.clientWidth / 2);
+  }
 });
 
 function repaint() { wellColor = groundColor(); paintOffscreen(); draw(); }

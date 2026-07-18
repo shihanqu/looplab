@@ -102,26 +102,37 @@ def build(result: SearchResult, out_dir: Path, mode: str = "local",
 
 
 def render_explorer_assets(result: SearchResult, out_dir: Path,
-                           preview_ranks: int = 10) -> None:
+                           preview_ranks: int = 10, progress=None) -> None:
     """Render everything the explorer links or embeds: full-quality cuts for
-    the top candidates, embeddable exports for the top 3, scrub proxies."""
+    the top candidates, embeddable exports for the top 3, scrub proxies.
+    `progress(frac)` reports completed render jobs."""
     fps = round(result.fps)
+    jobs: list = []
     for c in result.candidates[:preview_ranks]:
         s, e = c["start_frame"], c["end_frame"]
         p = out_dir / f"loop_s{s}_e{e}.mp4"
         if not p.exists():
-            render.cut_loop(result.src, s, e, fps, p)
+            jobs.append(lambda s=s, e=e, p=p: render.cut_loop(
+                result.src, s, e, fps, p))
     for c in result.candidates[:3]:
         s, e = c["start_frame"], c["end_frame"]
         full = out_dir / f"loop_s{s}_e{e}.mp4"
         ex = out_dir / f"export_s{s}_e{e}.mp4"
         if not ex.exists():
-            render.reencode(full, ex, crf=23)
+            jobs.append(lambda full=full, ex=ex: render.reencode(
+                full, ex, crf=23))
     if not (out_dir / "scrub_480.mp4").exists():
-        render.scrub_proxy(result.src, out_dir / "scrub_480.mp4", crf=28)
+        jobs.append(lambda: render.scrub_proxy(
+            result.src, out_dir / "scrub_480.mp4", crf=28))
     if not (out_dir / "scrub_480_c30.mp4").exists():
-        render.scrub_proxy(result.src, out_dir / "scrub_480_c30.mp4", crf=30)
-    render.render_strips(result.src, result.candidates[:3], out_dir)
+        jobs.append(lambda: render.scrub_proxy(
+            result.src, out_dir / "scrub_480_c30.mp4", crf=30))
+    jobs.append(lambda: render.render_strips(
+        result.src, result.candidates[:3], out_dir))
+    for i, job in enumerate(jobs):
+        job()
+        if progress:
+            progress((i + 1) / len(jobs))
 
 
 def render_heatmap_png(result: SearchResult, path: Path) -> Path:

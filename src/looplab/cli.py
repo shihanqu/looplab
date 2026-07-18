@@ -64,8 +64,13 @@ def build_parser() -> argparse.ArgumentParser:
                       help="minimum loop length, seconds (default 0.5)")
     tune.add_argument("--max-loop", type=float, default=3.0, metavar="S",
                       help="maximum loop length, seconds (default 3.0)")
-    tune.add_argument("--proxy-long", type=int, default=512, metavar="PX",
-                      help="proxy long side; lower = faster (default 512)")
+    tune.add_argument("--proxy-long", type=int, default=None, metavar="PX",
+                      help="proxy long side; lower = faster (default: auto "
+                           "512/384/256 by video length)")
+    tune.add_argument("--crop", metavar="X,Y,W,H",
+                      help="restrict the seam SEARCH to a normalized 0-1 rect "
+                           "(e.g. 0.2,0.1,0.6,0.8); rendered loops stay "
+                           "full-frame (default: whole frame)")
     tune.add_argument("--window", type=int, default=5, metavar="F",
                       help="+/- frames matched across the seam (default 5)")
     tune.add_argument("--vel-weight", type=float, default=1.0,
@@ -98,12 +103,25 @@ def main(argv=None) -> int:
     if not src.exists():
         return _fail(args, 4, f"input not found: {src}")
 
+    crop = None
+    if args.crop:
+        try:
+            crop = tuple(float(v) for v in args.crop.split(","))
+            ok = (len(crop) == 4 and all(0 <= v <= 1 for v in crop)
+                  and crop[2] > 0 and crop[3] > 0
+                  and crop[0] + crop[2] <= 1.0001 and crop[1] + crop[3] <= 1.0001)
+            if not ok:
+                raise ValueError
+        except ValueError:
+            return _fail(args, 4, "bad --crop; expected X,Y,W,H as 0-1 "
+                                  "fractions with the rect inside the frame")
+
     log = (lambda _msg: None) if args.quiet else core.log_stderr
     params = core.SearchParams(
         min_loop=args.min_loop, max_loop=args.max_loop,
         proxy_long=args.proxy_long, window=args.window,
         vel_weight=args.vel_weight, focus_weight=args.focus_weight,
-        min_activity=args.min_activity, top=args.top)
+        min_activity=args.min_activity, top=args.top, crop=crop)
 
     try:
         result = core.run_search(str(src), params, log=log)

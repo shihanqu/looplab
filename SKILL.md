@@ -69,6 +69,9 @@ On failure: `{"ok": false, "error": "...", "exit_code": N}` on stdout, same code
 | `--focus-weight` | 1.0 | prop state mismatches at the seam | subject isn't bright/white |
 | `--vel-weight` | 1.0 | direction flips at the seam | motion blur dominates |
 | `--window` | 5 | seams pose-match but don't flow | very fast cycles (< 0.5 s) |
+| `--crop X,Y,W,H` | full frame | background events pollute the score; loop only one region | — |
+
+`--proxy-long` defaults to auto (512/384/256 stepping down with video length) to bound memory on long inputs; set it explicitly to pin quality. `--crop` takes normalized 0–1 fractions and constrains only the *search* — rendered loops remain full-frame.
 
 ## Library use
 

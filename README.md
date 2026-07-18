@@ -62,7 +62,8 @@ Logs go to stderr; stdout carries only the output path (or JSON). Analysis artif
 | `--vel-weight` | 1.0 | velocity stream weight |
 | `--focus-weight` | 1.0 | bright-object stream weight (0 = off) |
 | `--min-activity` | 0.7 | min in-loop motion vs video median |
-| `--proxy-long` | 512 | proxy resolution; lower = faster |
+| `--proxy-long` | auto | proxy resolution (512/384/256 by length); lower = faster |
+| `--crop` | full frame | `X,Y,W,H` 0–1 rect the search looks at; output stays full-frame |
 | `--crf` | 18 | x264 quality of rendered loops |
 
 ## The explorer
@@ -72,7 +73,9 @@ looplab --ui                 # open the explorer, pick a video with the OS file 
 looplab input.mp4 --ui       # same, pre-loading this video
 ```
 
-`--ui` starts a localhost-only server and opens the explorer in your browser. **Open video…** raises the native OS file picker (macOS `choose file`, tkinter elsewhere) — the server gets a real filesystem path and analyzes the original in place, no upload or copy; live progress streams into the toolbar. The explorer itself is a heatmap of the entire search space: hover to scrub any (start, end) pair with a magnetic cursor that snaps to ridge peaks, click any cell for an instant in-page segment preview, and one-click export the top cuts.
+`--ui` starts a localhost-only server and opens the explorer shell immediately — analysis happens on demand, with a live progress bar (decode → score → render). **Open video…** raises the native OS file picker (macOS `choose file`, tkinter elsewhere) — the server gets a real filesystem path and analyzes the original in place, no upload or copy. **Params** exposes the search knobs (loop range, proxy resolution, seam window, gates, stream weights; persisted locally), **Crop** lets you drag a rectangle on a poster frame to restrict the *search* to a region — rendered loops stay full-frame — and **Re-analyze** reruns the loaded video with new settings.
+
+The explorer itself is a heatmap of the entire search space: hover to scrub any (start, end) pair with a magnetic cursor that snaps to ridge peaks, click any cell for an instant in-page segment preview, and one-click export the top cuts. A **1:1** toggle gives one heatmap pixel per source frame (scrolling horizontally, centered on the selection) — built for long videos, where fit mode compresses the timeline. Proxy resolution auto-steps down (512/384/256) as videos get long so the working set stays sane; override it in Params or with `--proxy-long`.
 
 For a no-server snapshot, `--explore` writes the same UI as static files into the workdir: `index.html` (full-quality previews for the top 10) and `artifact.html` (single-file, videos embedded as data URIs — postable anywhere a strict CSP applies).
 

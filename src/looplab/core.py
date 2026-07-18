@@ -75,7 +75,7 @@ def log_stderr(msg: str) -> None:
 class SearchParams:
     min_loop: float = 0.5          # seconds
     max_loop: float = 3.0          # seconds
-    proxy_long: int = 512          # proxy long-side pixels
+    proxy_long: int | None = None  # proxy long side px; None = auto by length
     window: int = 5                # +/- frames matched across the seam
     sigma: float = 2.0             # gaussian width of that window
     vel_weight: float = 1.0        # velocity stream weight
@@ -84,6 +84,8 @@ class SearchParams:
     min_activity: float = 0.7      # min in-loop motion vs video median
     top: int = 10                  # candidates to keep
     nms: int = 8                   # near-duplicate radius, frames
+    crop: tuple[float, float, float, float] | None = None  # normalized x,y,w,h
+                                   # region the SEARCH looks at; output stays full-frame
 
 
 @dataclass
@@ -135,16 +137,45 @@ def ffprobe_video(src: str) -> dict:
             "duration": float(st.get("duration", 0.0))}
 
 
-def decode_proxy(src: str, w: int, h: int) -> np.ndarray:
-    """Decode the whole video once to a small RGB proxy, passthrough frame order."""
+def _auto_proxy(n_frames_est: int) -> int:
+    """Pick a proxy resolution the working set can afford as videos get long."""
+    if n_frames_est <= 5000:
+        return 512
+    if n_frames_est <= 12000:
+        return 384
+    return 256
+
+
+def decode_proxy(src: str, w: int, h: int,
+                 crop: tuple[float, float, float, float] | None = None,
+                 expected_frames: int = 0, progress=None) -> np.ndarray:
+    """Decode the whole video once to a small RGB proxy, passthrough frame
+    order. `crop` (normalized x,y,w,h) restricts the decoded region so the
+    search only sees it. Streams stdout so progress can be reported."""
+    vf = f"scale={w}:{h}"
+    if crop:
+        cx, cy, cw, ch = crop
+        vf = (f"crop=trunc(iw*{cw:.6f}/2)*2:trunc(ih*{ch:.6f}/2)*2:"
+              f"trunc(iw*{cx:.6f}):trunc(ih*{cy:.6f})," + vf)
     cmd = ["ffmpeg", "-v", "error", "-i", src, "-map", "0:v:0", "-vsync", "0",
-           "-vf", f"scale={w}:{h}", "-pix_fmt", "rgb24", "-f", "rawvideo", "-"]
-    raw = subprocess.run(cmd, capture_output=True, check=True).stdout
+           "-vf", vf, "-pix_fmt", "rgb24", "-f", "rawvideo", "-"]
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     frame_bytes = w * h * 3
-    n = len(raw) // frame_bytes
-    if n == 0 or len(raw) % frame_bytes:
+    buf = bytearray()
+    while True:
+        b = proc.stdout.read(1 << 23)
+        if not b:
+            break
+        buf += b
+        if progress and expected_frames:
+            progress(min(len(buf) / (frame_bytes * expected_frames), 1.0))
+    err = proc.stderr.read()
+    if proc.wait() != 0:
+        raise subprocess.CalledProcessError(proc.returncode, cmd, stderr=err)
+    n = len(buf) // frame_bytes
+    if n == 0 or len(buf) % frame_bytes:
         raise RuntimeError("decode produced no complete frames; check the input")
-    return np.frombuffer(raw, np.uint8).reshape(n, h, w, 3)
+    return np.frombuffer(buf, np.uint8).reshape(n, h, w, 3)
 
 
 def variance_weights(frames: np.ndarray, gamma: float) -> np.ndarray:
@@ -184,7 +215,7 @@ def _focus_stream_mx(frames: np.ndarray, mx):
 
 
 def band_distances(frames: np.ndarray, offsets: np.ndarray, weights: np.ndarray,
-                   use_focus: bool, log=log_stderr):
+                   use_focus: bool, log=log_stderr, progress=None):
     """Mean-squared distance of three streams for every (start, offset) cell:
     position (variance-weighted RGB), velocity (central difference), and the
     bright-object 'focus' stream (luma masked to bright, unsaturated pixels —
@@ -223,6 +254,8 @@ def band_distances(frames: np.ndarray, offsets: np.ndarray, weights: np.ndarray,
             out["velocity"][: n - o, i] = np.array(ev)
             if use_focus:
                 out["focus"][: n - o, i] = np.array(et)
+            if progress:
+                progress((i + 1) / n_off)
         return out
 
     # numpy and cupy share this path; asnumpy is identity for numpy
@@ -245,6 +278,8 @@ def band_distances(frames: np.ndarray, offsets: np.ndarray, weights: np.ndarray,
         if use_focus:
             d = t[o:] - t[:-o]
             out["focus"][: n - o, i] = asnumpy(xp.mean(d * d, axis=1))
+        if progress:
+            progress((i + 1) / n_off)
     return out
 
 
@@ -376,22 +411,38 @@ def pick_candidates(s_gated: np.ndarray, activity: np.ndarray,
 
 
 def run_search(src: str, params: SearchParams | None = None,
-               log=log_stderr) -> SearchResult:
+               log=log_stderr, progress=None) -> SearchResult:
     """Full pipeline: probe -> proxy decode -> banded 3-stream scoring ->
-    windowing -> gates -> ranked candidates."""
+    windowing -> gates -> ranked candidates.
+
+    `progress(stage, frac)` gets stage in {"decode", "score", "post"} with
+    frac in [0, 1] for live progress reporting."""
     params = params or SearchParams()
     t0 = time.time()
 
     info = ffprobe_video(src)
     fps = info["fps"]
-    if info["width"] >= info["height"]:
-        pw = params.proxy_long
-        ph = int(round(pw * info["height"] / info["width"] / 2)) * 2
+    n_est = info["nb_frames"] or int(round(info["duration"] * fps))
+    proxy_long = params.proxy_long or _auto_proxy(n_est)
+    if params.proxy_long is None:
+        log(f"[proxy] auto {proxy_long}px long side for ~{n_est} frames "
+            f"(set --proxy-long to override)")
+    crop = params.crop
+    if crop:
+        log(f"[crop] search restricted to x={crop[0]:.3f} y={crop[1]:.3f} "
+            f"w={crop[2]:.3f} h={crop[3]:.3f} (output stays full-frame)")
+    cw = info["width"] * (crop[2] if crop else 1.0)
+    ch = info["height"] * (crop[3] if crop else 1.0)
+    if cw >= ch:
+        pw = proxy_long
+        ph = max(16, int(round(pw * ch / cw / 2)) * 2)
     else:
-        ph = params.proxy_long
-        pw = int(round(ph * info["width"] / info["height"] / 2)) * 2
+        ph = proxy_long
+        pw = max(16, int(round(ph * cw / ch / 2)) * 2)
 
-    frames = decode_proxy(src, pw, ph)
+    frames = decode_proxy(src, pw, ph, crop=crop, expected_frames=n_est,
+                          progress=(lambda f: progress("decode", f))
+                          if progress else None)
     n = frames.shape[0]
     log(f"[decode] {n} frames @ {fps:.3f} fps, proxy {pw}x{ph} "
         f"({time.time() - t0:.1f}s)")
@@ -405,7 +456,9 @@ def run_search(src: str, params: SearchParams | None = None,
                         int(round(params.max_loop * fps)) + 1)
     weights = variance_weights(frames, params.var_gamma)
     use_focus = params.focus_weight > 0
-    streams = band_distances(frames, offsets, weights, use_focus, log)
+    streams = band_distances(frames, offsets, weights, use_focus, log,
+                             progress=(lambda f: progress("score", f))
+                             if progress else None)
 
     d = streams["position"] / np.nanmedian(streams["position"])
     d += params.vel_weight * (streams["velocity"] / np.nanmedian(streams["velocity"]))
@@ -435,6 +488,8 @@ def run_search(src: str, params: SearchParams | None = None,
 
     cands = pick_candidates(s_gated, activity, offsets, fps,
                             params.top, params.nms)
+    if progress:
+        progress("post", 1.0)
     return SearchResult(
         src=str(src), fps=fps, n_frames=n, offsets=offsets,
         s_win=s_win, s_gated=s_gated, activity=activity,
