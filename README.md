@@ -76,9 +76,9 @@ looplab input.mp4 --ui       # same, with this video pre-opened
 
 `--ui` starts a localhost-only server and opens the explorer shell immediately. Nothing runs or loads on its own: **Open video…** raises the native OS file picker (macOS `choose file`, tkinter elsewhere) — the server gets a real filesystem path and reads the original in place, no upload or copy — and the settings dropdown then drives everything:
 
-- **Tuning** — loop range, proxy resolution, seam window, gates, stream weights (persisted locally).
-- **Attention crop** — drag a rectangle on a poster frame; the seam *search* only looks inside it, rendered loops stay full-frame.
-- **Ignore time ranges** — spans no loop may overlap (`0-4.5, 42-47`), for fencing off fumbles and interruptions. After a first pass you can also shift-drag a span directly on the heatmap.
+- **Tuning** — loop range, proxy resolution, seam window, gates, stream weights (persisted locally; every knob explains itself on hover).
+- **Attention crop** — drag a rectangle on the live frame preview; the seam *search* only looks inside it, rendered loops stay full-frame.
+- **Ignore time ranges** — drag spans onto a filmstrip timeline whose hover scrubs the frame preview; click a span to remove it, overlapping spans merge, auto-detected disruptions show in gray, and a text field mirrors it all numerically. After a first pass you can also shift-drag a span directly on the heatmap.
 - **Analyze / Re-analyze** — runs with a live weighted progress bar (decode → score → render) and a **Stop** button. When the video already has a `.looplab/` workdir, a **Load previous results** button appears instead of anything loading automatically — restarts are always explicit, and the landing page lists recent videos.
 
 The explorer itself is a heatmap of the entire search space: hover to scrub any (start, end) pair with a magnetic cursor that snaps to ridge peaks, click any cell for an instant in-page segment preview, and one-click export the top cuts. A **1:1** toggle gives one heatmap pixel per source frame (scrolling horizontally, centered on the selection) — built for long videos, where fit mode compresses the timeline. Proxy resolution auto-steps down (512/384/256) as videos get long so the working set stays sane; override it in settings or with `--proxy-long`.

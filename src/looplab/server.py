@@ -71,7 +71,9 @@ def _has_previous(path: str) -> bool:
 def _manifest_info(wd: Path) -> dict | None:
     try:
         m = json.loads((wd / "candidates.json").read_text())
-        return {"fps": m.get("fps"), "n_frames": m.get("n_frames")}
+        return {"fps": m.get("fps"), "n_frames": m.get("n_frames"),
+                "excluded_runs": [[r.get("start_s"), r.get("end_s")]
+                                  for r in m.get("excluded_runs", [])]}
     except Exception:
         return None
 
@@ -184,8 +186,11 @@ def _analyze(path: str, raw_params: dict | None = None) -> None:
         with STATE.lock:
             if STATE.run == run:
                 STATE.workdir, STATE.phase, STATE.pct = workdir, "ready", 100.0
-                STATE.result_info = {"fps": result.fps,
-                                     "n_frames": result.n_frames}
+                STATE.result_info = {
+                    "fps": result.fps, "n_frames": result.n_frames,
+                    "excluded_runs": [[round(a / result.fps, 2),
+                                       round(b / result.fps, 2)]
+                                      for a, b in result.excluded_runs]}
     except _Cancelled:
         with STATE.lock:
             if STATE.run == run:
@@ -221,10 +226,10 @@ def _pick_file() -> str | None:
                            "run: looplab <video>  then  looplab --ui") from e
 
 
-def _poster_frame(path: str, t: float) -> bytes:
+def _poster_frame(path: str, t: float, w: int = 560) -> bytes:
     r = subprocess.run(
         ["ffmpeg", "-v", "error", "-ss", str(max(t, 0.0)), "-i", path,
-         "-frames:v", "1", "-vf", "scale=560:-2", "-f", "image2pipe",
+         "-frames:v", "1", "-vf", f"scale={w}:-2", "-f", "image2pipe",
          "-vcodec", "mjpeg", "pipe:1"],
         capture_output=True, check=True)
     return r.stdout
@@ -246,48 +251,51 @@ TOOLBAR = """
         <line x1="3" y1="18" x2="21" y2="18"/><circle cx="7" cy="18" r="2.7"/>
       </svg>
     </button>
-    <button id="ll-stop" class="ll-btn ll-stop" hidden>Stop</button>
+    <button id="ll-stop" class="ll-btn ll-stop" hidden
+      title="Stop the analysis; partial results are discarded">Stop</button>
     <span id="ll-status" style="color:#8f8798;font-family:ui-monospace,Menlo,monospace;
       font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
       max-width:52ch"></span>
   </div>
   <div id="ll-panel">
     <div class="ll-row">
-      <label class="ll-f">min loop (s)<input id="p-min_loop" type="number" step="0.1" min="0.1"></label>
-      <label class="ll-f">max loop (s)<input id="p-max_loop" type="number" step="0.5" min="0.2"></label>
-      <label class="ll-f">proxy px<select id="p-proxy_long">
+      <label class="ll-f"><span class="ll-tt" data-tip="Shortest loop length considered, in seconds. Keep it at or above one full motion cycle.">min loop (s)</span><input id="p-min_loop" type="number" step="0.1" min="0.1"></label>
+      <label class="ll-f"><span class="ll-tt" data-tip="Longest loop length considered. A wider band costs more compute; longer loops feel more organic.">max loop (s)</span><input id="p-max_loop" type="number" step="0.5" min="0.2"></label>
+      <label class="ll-f"><span class="ll-tt" data-tip="Long side of the tiny analysis proxy. auto steps 512/384/256 down as videos get longer. Lower = faster but less discriminating.">proxy px</span><select id="p-proxy_long">
         <option value="auto">auto</option><option>512</option><option>384</option>
         <option>256</option><option>192</option></select></label>
-      <label class="ll-f">seam window (&plusmn;f)<input id="p-window" type="number" step="1" min="1"></label>
-      <label class="ll-f">min activity<input id="p-min_activity" type="number" step="0.1" min="0"></label>
-      <label class="ll-f">focus weight<input id="p-focus_weight" type="number" step="0.5" min="0"></label>
-      <label class="ll-f">velocity weight<input id="p-vel_weight" type="number" step="0.5" min="0"></label>
+      <label class="ll-f"><span class="ll-tt" data-tip="Frames matched on both sides of the cut (with Gaussian falloff) so motion flows through the seam instead of just posing at it.">seam window (&plusmn;f)</span><input id="p-window" type="number" step="1" min="1"></label>
+      <label class="ll-f"><span class="ll-tt" data-tip="Minimum in-loop motion relative to the video median. Gates frozen or occluded stretches that would otherwise loop 'perfectly'. Lower it if everything gets gated.">min activity</span><input id="p-min_activity" type="number" step="0.1" min="0"></label>
+      <label class="ll-f"><span class="ll-tt" data-tip="Weight of the bright-object stream: luma masked to bright, low-saturation pixels (the prop). Raise it if the prop state mismatches at the seam; set 0 for footage without a bright subject.">focus weight</span><input id="p-focus_weight" type="number" step="0.5" min="0"></label>
+      <label class="ll-f"><span class="ll-tt" data-tip="Weight of the velocity stream, which penalizes frames that pose-match but move differently. Raise it if direction flips at the seam.">velocity weight</span><input id="p-vel_weight" type="number" step="0.5" min="0"></label>
     </div>
     <div class="ll-row">
       <div class="ll-sec">
-        <span class="ll-sechead">attention crop</span>
+        <span class="ll-sechead ll-tt" data-tip="Drag a rectangle on the frame preview below. The seam search only scores pixels inside it - rendered loops stay full-frame.">attention crop</span>
         <div style="display:flex;gap:8px;align-items:center">
-          <button id="ll-crop" class="ll-btn">Set&hellip;</button>
-          <button id="ll-cropclear" class="ll-btn" hidden>Clear</button>
+          <button id="ll-cropclear" class="ll-btn" title="Remove the attention crop" hidden>Clear</button>
           <span id="ll-cropval" class="ll-mono">full frame</span>
         </div>
-        <span class="ll-hint">the seam search only looks inside it; loops render full-frame</span>
       </div>
       <div class="ll-sec" style="flex:1;min-width:280px">
-        <span class="ll-sechead">ignore time ranges (s)</span>
+        <span class="ll-sechead ll-tt" data-tip="Time spans no loop may overlap. Drag on the timeline below to add one, click a span to remove it, or shift-drag the heatmap after an analysis. Gray spans are auto-detected disruptions.">ignore time ranges (s)</span>
         <input id="p-ignore" type="text" placeholder="e.g. 0-4.5, 42-47"
           spellcheck="false" autocomplete="off">
-        <span class="ll-hint">no loop will overlap these times &middot; tip: shift-drag the heatmap</span>
+        <span class="ll-hint">drag the timeline below to add &middot; click a span to remove</span>
       </div>
     </div>
-    <div id="ll-croparea" hidden>
+    <div id="ll-source" hidden>
       <canvas id="ll-cropcv"></canvas>
-      <span class="ll-hint">drag a rectangle on the frame; drag a tiny one (or Clear) to remove</span>
+      <canvas id="ll-tlcv" height="44"></canvas>
+      <div id="ll-tllabel" class="ll-hint">&nbsp;</div>
     </div>
     <div class="ll-row" style="margin-bottom:0">
-      <button id="ll-analyze" class="ll-btn ll-accent" disabled>Analyze</button>
-      <button id="ll-loadprev" class="ll-btn" hidden>Load previous results</button>
-      <button id="ll-reset" class="ll-btn">Reset</button>
+      <button id="ll-analyze" class="ll-btn ll-accent" disabled
+        title="Run the seam search on the opened video with these settings">Analyze</button>
+      <button id="ll-loadprev" class="ll-btn" hidden
+        title="Serve this video's existing .looplab results without re-analyzing">Load previous results</button>
+      <button id="ll-reset" class="ll-btn"
+        title="Restore default tuning and clear this video's crop and ignore ranges">Reset</button>
     </div>
   </div>
   <div style="height:3px;background:#241f2a">
@@ -318,10 +326,19 @@ TOOLBAR = """
     font:13px ui-monospace,Menlo,monospace; }
   #p-ignore.ll-bad { border-color:#e05656; }
   #ll-panel { display:none; padding:12px 24px 16px; border-top:1px solid #2a2630; }
-  #ll-panel.open { display:block; animation:llslide .16s ease-out; }
-  #ll-croparea { margin:0 0 14px; }
-  #ll-cropcv { display:block; border-radius:6px; cursor:crosshair; max-width:560px;
-    width:100%; height:auto; }
+  #ll-panel.open { display:block; animation:llslide .16s ease-out;
+    max-height:calc(100vh - 76px); overflow:auto; }
+  #ll-source { margin:0 0 14px; max-width:560px; }
+  #ll-cropcv { display:block; border-radius:6px 6px 0 0; cursor:crosshair;
+    width:auto; height:auto; max-width:100%; max-height:320px; }
+  #ll-tlcv { display:block; width:100%; height:44px; margin-top:2px;
+    border-radius:0 0 6px 6px; cursor:crosshair; background:#1d1a21; }
+  .ll-tt { border-bottom:1px dotted #6f6879; cursor:help; position:relative; }
+  .ll-tt:hover::after { content:attr(data-tip); position:absolute; left:0;
+    top:calc(100% + 6px); z-index:60; width:230px; background:#241f2a;
+    color:#d8d2c9; border:1px solid #4a4452; border-radius:6px; padding:7px 10px;
+    font:12px/1.45 system-ui,sans-serif; text-transform:none; letter-spacing:0;
+    white-space:normal; pointer-events:none; box-shadow:0 4px 14px rgba(0,0,0,.4); }
   @keyframes llslide { from { opacity:0; transform:translateY(-5px); } }
   @media (prefers-reduced-motion: reduce) { #ll-panel.open { animation:none; } }
 </style>
@@ -335,7 +352,7 @@ TOOLBAR = """
                   'focus_weight','vel_weight'];
   const DEFAULTS = __DEFAULTS__;
   let video = null, hasPrev = false, phase = 'idle', dur = 0;
-  let llCrop = null, posterImg = null;
+  let llCrop = null, frameImg = null, autoRuns = [];
   const clamp01 = x => Math.min(Math.max(x, 0), 1);
   const post = (url, body) => fetch(url, { method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -355,6 +372,7 @@ TOOLBAR = """
     llCrop = Array.isArray(v.crop) ? v.crop : null;
     ignoreEl.value = v.ignore || '';
     updateCropUI();
+    renderTimeline();
   }
   function saveVideoPrefs() {
     if (video) jset('ll-v:' + video, { crop: llCrop, ignore: ignoreEl.value });
@@ -400,31 +418,63 @@ TOOLBAR = """
     loadParams();
     loadVideoPrefs();
   });
-  ignoreEl.addEventListener('change', () => { parseIgnore(); saveVideoPrefs(); });
+  ignoreEl.addEventListener('change', () => {
+    parseIgnore(); saveVideoPrefs(); renderTimeline();
+  });
 
   function setPanel(open) {
     $('ll-panel').classList.toggle('open', open);
     $('ll-params').classList.toggle('on', open);
     $('ll-params').setAttribute('aria-expanded', String(open));
+    if (open) renderTimeline();  // clientWidth is 0 while the panel is closed
   }
   $('ll-params').addEventListener('click',
     () => setPanel(!$('ll-panel').classList.contains('open')));
 
-  // ---- attention crop ----
-  const cv = $('ll-cropcv');
+  // ---- source preview: crop drag on the frame, scrubbed by the timeline ----
+  const cv = $('ll-cropcv'), tl = $('ll-tlcv'), tlLabel = $('ll-tllabel');
   let dragging = null;
+  const fmtT = t => String(Math.round(t * 10) / 10);
+  function frameURL(t, w) {
+    return '/frame?path=' + encodeURIComponent(video)
+      + '&t=' + t.toFixed(2) + '&w=' + w;
+  }
+  const frameCache = new Map();
+  let frameSeq = 0;
+  function showFrame(t) {
+    if (!video) return;
+    t = Math.min(Math.max(t, 0), Math.max((dur || 1) - 0.25, 0));
+    const key = Math.round(t * 2) / 2;
+    const seq = ++frameSeq;
+    let img = frameCache.get(key);
+    if (!img) {
+      img = new Image();
+      frameCache.set(key, img);
+      img.src = frameURL(key, 560);
+    }
+    const use = () => {
+      if (seq !== frameSeq || !img.naturalWidth) return;
+      if (cv.width !== img.naturalWidth) {
+        cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+      }
+      frameImg = img;
+      drawPreview();
+    };
+    if (img.complete) use();
+    else img.addEventListener('load', use, { once: true });
+  }
   function updateCropUI() {
     $('ll-cropval').textContent = llCrop
       ? 'x=' + llCrop[0].toFixed(3) + ' y=' + llCrop[1].toFixed(3)
         + ' w=' + llCrop[2].toFixed(3) + ' h=' + llCrop[3].toFixed(3)
       : 'full frame';
     $('ll-cropclear').hidden = !llCrop;
-    drawCrop();
+    drawPreview();
   }
-  function drawCrop() {
-    if (!posterImg) return;
+  function drawPreview() {
+    if (!frameImg || !cv.width) return;
     const ctx = cv.getContext('2d');
-    ctx.drawImage(posterImg, 0, 0, cv.width, cv.height);
+    ctx.drawImage(frameImg, 0, 0, cv.width, cv.height);
     if (llCrop) {
       const x = llCrop[0], y = llCrop[1], w = llCrop[2], h = llCrop[3];
       ctx.fillStyle = 'rgba(0,0,0,.55)';
@@ -436,20 +486,6 @@ TOOLBAR = """
       ctx.strokeRect(x * cv.width, y * cv.height, w * cv.width, h * cv.height);
     }
   }
-  $('ll-crop').addEventListener('click', () => {
-    if (!video) { st.textContent = 'open a video first'; return; }
-    const area = $('ll-croparea');
-    area.hidden = !area.hidden;
-    if (area.hidden) return;
-    if (posterImg) { drawCrop(); return; }
-    const img = new Image();
-    img.onload = () => {
-      posterImg = img;
-      cv.width = img.naturalWidth; cv.height = img.naturalHeight;
-      drawCrop();
-    };
-    img.src = '/frame?path=' + encodeURIComponent(video) + '&t=1';
-  });
   $('ll-cropclear').addEventListener('click', () => {
     llCrop = null; updateCropUI(); saveVideoPrefs();
   });
@@ -474,6 +510,116 @@ TOOLBAR = """
     saveVideoPrefs();
   });
 
+  // ---- timeline: hover scrubs the preview, drag adds an ignore range ----
+  let tlHover = null, tlDrag = null, tlDown = null;
+  const thumbs = [];
+  let thumbsFor = null;
+  function tlTime(ev) {
+    const r = tl.getBoundingClientRect();
+    if (!r.width) return 0;  // collapsed viewport: never emit NaN times
+    return clamp01((ev.clientX - r.left) / r.width) * dur;
+  }
+  function writeRanges(list) {
+    list.sort((p, q) => p[0] - q[0]);
+    const merged = [];
+    for (const r of list) {
+      const last = merged[merged.length - 1];
+      if (last && r[0] <= last[1] + 0.05) last[1] = Math.max(last[1], r[1]);
+      else merged.push([r[0], r[1]]);
+    }
+    ignoreEl.value = merged.map(r => fmtT(r[0]) + '-' + fmtT(r[1])).join(', ');
+    ignoreEl.classList.remove('ll-bad');
+    saveVideoPrefs();
+    renderTimeline();
+  }
+  function loadThumbs() {
+    if (!video || !dur || thumbsFor === video) return;
+    thumbsFor = video;
+    thumbs.length = 0;
+    const n = 12;
+    for (let i = 0; i < n; i++) {
+      const img = new Image();
+      img.onload = () => renderTimeline();
+      img.src = frameURL(Math.min(dur * (i + 0.5) / n, Math.max(dur - 0.25, 0)), 96);
+      thumbs.push(img);
+    }
+  }
+  function renderTimeline() {
+    if (!video || !dur || !tl.clientWidth) return;
+    const w = tl.clientWidth, h = 44;
+    if (tl.width !== w) tl.width = w;
+    const ctx = tl.getContext('2d');
+    ctx.fillStyle = '#1d1a21';
+    ctx.fillRect(0, 0, w, h);
+    const n = thumbs.length || 12, tw = w / n;
+    thumbs.forEach((img, i) => {
+      if (!img.complete || !img.naturalWidth) return;
+      const s = Math.max(tw / img.naturalWidth, h / img.naturalHeight);
+      const dw = img.naturalWidth * s, dh = img.naturalHeight * s;
+      ctx.save();
+      ctx.beginPath(); ctx.rect(i * tw, 0, tw, h); ctx.clip();
+      ctx.drawImage(img, i * tw + (tw - dw) / 2, (h - dh) / 2, dw, dh);
+      ctx.restore();
+    });
+    const px = t => t / dur * w;
+    ctx.fillStyle = 'rgba(120,118,130,.5)';
+    for (const r of autoRuns)
+      ctx.fillRect(px(r[0]), 0, Math.max(px(r[1]) - px(r[0]), 2), h);
+    for (const r of (parseIgnore() || [])) {
+      ctx.fillStyle = 'rgba(224,90,80,.45)';
+      ctx.fillRect(px(r[0]), 0, Math.max(px(r[1]) - px(r[0]), 2), h);
+      ctx.strokeStyle = '#e05a50';
+      ctx.strokeRect(px(r[0]) + .5, .5, Math.max(px(r[1]) - px(r[0]), 2) - 1, h - 1);
+    }
+    if (tlDrag) {
+      const a = Math.min(tlDrag[0], tlDrag[1]), b = Math.max(tlDrag[0], tlDrag[1]);
+      ctx.fillStyle = 'rgba(224,122,99,.5)';
+      ctx.fillRect(px(a), 0, Math.max(px(b) - px(a), 1), h);
+    }
+    if (tlHover !== null) {
+      ctx.fillStyle = '#ece7df';
+      ctx.fillRect(px(tlHover) - .5, 0, 1, h);
+    }
+  }
+  tl.addEventListener('mousemove', ev => {
+    if (!dur) return;
+    const t = tlTime(ev);
+    tlHover = t;
+    if (tlDown !== null) tlDrag = [tlDown, t];
+    const over = (parseIgnore() || []).find(r => t >= r[0] && t <= r[1]);
+    tl.style.cursor = over && tlDown === null ? 'pointer' : 'crosshair';
+    tlLabel.textContent = fmtT(t) + 's'
+      + (over && tlDown === null
+         ? ' \\u2014 click to remove ignore ' + fmtT(over[0]) + '-' + fmtT(over[1])
+         : '');
+    showFrame(t);
+    renderTimeline();
+  });
+  tl.addEventListener('mouseleave', () => {
+    tlHover = null;
+    tlLabel.textContent = '\\u00a0';
+    renderTimeline();
+  });
+  tl.addEventListener('mousedown', ev => {
+    if (dur) { tlDown = tlTime(ev); ev.preventDefault(); }
+  });
+  addEventListener('mouseup', ev => {
+    if (tlDown === null) return;
+    const downT = tlDown, upT = tlTime(ev);
+    tlDown = null; tlDrag = null;
+    const a = Math.min(downT, upT), b = Math.max(downT, upT);
+    const ranges = parseIgnore() || [];
+    if (b - a < Math.max(dur * 0.004, 0.15)) {  // a click, not a drag
+      const hit = ranges.findIndex(r => upT >= r[0] && upT <= r[1]);
+      if (hit >= 0) writeRanges(ranges.filter((_, i) => i !== hit));
+      else renderTimeline();
+      return;
+    }
+    ranges.push([Math.max(0, a), Math.min(dur, b)]);
+    writeRanges(ranges);
+  });
+  addEventListener('resize', () => renderTimeline());
+
   // ---- status / flow ----
   function videoLine(s) {
     if (!s.video) return '';
@@ -491,6 +637,10 @@ TOOLBAR = """
     const i = s.result_info || s.info;
     dur = (i && i.n_frames && i.fps) ? i.n_frames / i.fps
         : (s.info && +s.info.duration) || 0;
+    autoRuns = (s.result_info && s.result_info.excluded_runs) || [];
+    $('ll-source').hidden = !video;
+    if (video && dur && thumbsFor !== video) { showFrame(1); loadThumbs(); }
+    renderTimeline();
     analyzeBtn.disabled = !video || phase === 'analyzing';
     analyzeBtn.textContent = phase === 'ready' ? 'Re-analyze' : 'Analyze';
     loadPrevBtn.hidden = !(hasPrev && phase !== 'ready' && phase !== 'analyzing');
@@ -758,11 +908,15 @@ class Handler(SimpleHTTPRequestHandler):
         if url.path == "/frame":
             q = parse_qs(url.query)
             path = (q.get("path") or [""])[0]
-            t = float((q.get("t") or ["1"])[0])
+            try:
+                t = float((q.get("t") or ["1"])[0])
+                w = max(32, min(int(float((q.get("w") or ["560"])[0])), 1280))
+            except ValueError:
+                return self._json({"error": "bad t/w"}, 400)
             if not path or not Path(path).exists():
                 return self._json({"error": "file not found"}, 404)
             try:
-                jpg = _poster_frame(path, t)
+                jpg = _poster_frame(path, t, w)
             except subprocess.CalledProcessError:
                 return self._json({"error": "could not decode a frame"}, 500)
             self.send_response(200)
