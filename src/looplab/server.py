@@ -269,25 +269,25 @@ TOOLBAR = """
       <label class="ll-f"><span class="ll-tt" data-tip="Weight of the bright-object stream: luma masked to bright, low-saturation pixels (the prop). Raise it if the prop state mismatches at the seam; set 0 for footage without a bright subject.">focus weight</span><input id="p-focus_weight" type="number" step="0.5" min="0"></label>
       <label class="ll-f"><span class="ll-tt" data-tip="Weight of the velocity stream, which penalizes frames that pose-match but move differently. Raise it if direction flips at the seam.">velocity weight</span><input id="p-vel_weight" type="number" step="0.5" min="0"></label>
     </div>
-    <div class="ll-row">
+    <div class="ll-row" style="margin-bottom:8px">
       <div class="ll-sec">
-        <span class="ll-sechead ll-tt" data-tip="Drag a rectangle on the frame preview below. The seam search only scores pixels inside it - rendered loops stay full-frame.">attention crop</span>
+        <span class="ll-sechead ll-tt" data-tip="Drag a rectangle on the frame preview below; drag inside the rectangle to move it. The seam search only scores pixels inside it - rendered loops stay full-frame.">attention crop</span>
         <div style="display:flex;gap:8px;align-items:center">
           <button id="ll-cropclear" class="ll-btn" title="Remove the attention crop" hidden>Clear</button>
           <span id="ll-cropval" class="ll-mono">full frame</span>
         </div>
       </div>
-      <div class="ll-sec" style="flex:1;min-width:280px">
-        <span class="ll-sechead ll-tt" data-tip="Time spans no loop may overlap. Drag on the timeline below to add one, click a span to remove it, or shift-drag the heatmap after an analysis. Gray spans are auto-detected disruptions.">ignore time ranges (s)</span>
-        <input id="p-ignore" type="text" placeholder="e.g. 0-4.5, 42-47"
-          spellcheck="false" autocomplete="off">
-        <span class="ll-hint">drag the timeline below to add &middot; click a span to remove</span>
-      </div>
     </div>
     <div id="ll-source" hidden>
       <canvas id="ll-cropcv"></canvas>
-      <canvas id="ll-tlcv" height="44"></canvas>
+      <canvas id="ll-tlcv" height="48"></canvas>
       <div id="ll-tllabel" class="ll-hint">&nbsp;</div>
+    </div>
+    <div class="ll-sec" style="margin:0 0 14px">
+      <span class="ll-sechead ll-tt" data-tip="Time spans no loop may overlap. Drag on the timeline above to add one, click a span to remove it, or shift-drag the heatmap after an analysis. Gray spans are auto-detected disruptions.">ignore time ranges (s)</span>
+      <input id="p-ignore" type="text" placeholder="e.g. 0-4.5, 42-47"
+        spellcheck="false" autocomplete="off">
+      <span class="ll-hint">drag the timeline to add &middot; click a span to remove &middot; overlaps merge</span>
     </div>
     <div class="ll-row" style="margin-bottom:0">
       <button id="ll-analyze" class="ll-btn ll-accent" disabled
@@ -328,11 +328,11 @@ TOOLBAR = """
   #ll-panel { display:none; padding:12px 24px 16px; border-top:1px solid #2a2630; }
   #ll-panel.open { display:block; animation:llslide .16s ease-out;
     max-height:calc(100vh - 76px); overflow:auto; }
-  #ll-source { margin:0 0 14px; max-width:560px; }
-  #ll-cropcv { display:block; border-radius:6px 6px 0 0; cursor:crosshair;
-    width:auto; height:auto; max-width:100%; max-height:320px; }
-  #ll-tlcv { display:block; width:100%; height:44px; margin-top:2px;
-    border-radius:0 0 6px 6px; cursor:crosshair; background:#1d1a21; }
+  #ll-source { margin:0 0 10px; }
+  #ll-cropcv { display:block; margin:0 auto; border-radius:6px; cursor:crosshair;
+    width:auto; height:auto; max-width:100%; max-height:46vh; }
+  #ll-tlcv { display:block; width:100%; height:48px; margin-top:6px;
+    border-radius:6px; cursor:crosshair; background:#1d1a21; }
   .ll-tt { border-bottom:1px dotted #6f6879; cursor:help; position:relative; }
   .ll-tt:hover::after { content:attr(data-tip); position:absolute; left:0;
     top:calc(100% + 6px); z-index:60; width:230px; background:#241f2a;
@@ -494,18 +494,35 @@ TOOLBAR = """
     return [clamp01((ev.clientX - r.left) / r.width),
             clamp01((ev.clientY - r.top) / r.height)];
   };
-  cv.addEventListener('mousedown', ev => { dragging = cvPos(ev); ev.preventDefault(); });
-  cv.addEventListener('mousemove', ev => {
+  const inCrop = p => llCrop && p[0] >= llCrop[0] && p[0] <= llCrop[0] + llCrop[2]
+    && p[1] >= llCrop[1] && p[1] <= llCrop[1] + llCrop[3];
+  cv.addEventListener('mousedown', ev => {
+    const p = cvPos(ev);
+    dragging = inCrop(p)
+      ? { mode: 'move', ox: p[0] - llCrop[0], oy: p[1] - llCrop[1] }
+      : { mode: 'draw', ax: p[0], ay: p[1] };
+    ev.preventDefault();
+  });
+  cv.addEventListener('mousemove', ev => {  // hover affordance only
+    if (!dragging) cv.style.cursor = inCrop(cvPos(ev)) ? 'move' : 'crosshair';
+  });
+  addEventListener('mousemove', ev => {  // active drags track past the canvas edge
     if (!dragging) return;
-    const a = dragging, b = cvPos(ev);
-    llCrop = [Math.min(a[0], b[0]), Math.min(a[1], b[1]),
-              Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])];
+    const p = cvPos(ev);
+    if (dragging.mode === 'draw')
+      llCrop = [Math.min(dragging.ax, p[0]), Math.min(dragging.ay, p[1]),
+                Math.abs(p[0] - dragging.ax), Math.abs(p[1] - dragging.ay)];
+    else {
+      llCrop[0] = Math.min(Math.max(p[0] - dragging.ox, 0), 1 - llCrop[2]);
+      llCrop[1] = Math.min(Math.max(p[1] - dragging.oy, 0), 1 - llCrop[3]);
+    }
     updateCropUI();
   });
   addEventListener('mouseup', () => {
     if (!dragging) return;
+    const wasDraw = dragging.mode === 'draw';
     dragging = null;
-    if (llCrop && (llCrop[2] < 0.02 || llCrop[3] < 0.02)) llCrop = null;
+    if (wasDraw && llCrop && (llCrop[2] < 0.02 || llCrop[3] < 0.02)) llCrop = null;
     updateCropUI();
     saveVideoPrefs();
   });
@@ -546,7 +563,7 @@ TOOLBAR = """
   }
   function renderTimeline() {
     if (!video || !dur || !tl.clientWidth) return;
-    const w = tl.clientWidth, h = 44;
+    const w = tl.clientWidth, h = tl.height;
     if (tl.width !== w) tl.width = w;
     const ctx = tl.getContext('2d');
     ctx.fillStyle = '#1d1a21';

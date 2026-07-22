@@ -77,7 +77,7 @@ looplab input.mp4 --ui       # same, with this video pre-opened
 `--ui` starts a localhost-only server and opens the explorer shell immediately. Nothing runs or loads on its own: **Open video…** raises the native OS file picker (macOS `choose file`, tkinter elsewhere) — the server gets a real filesystem path and reads the original in place, no upload or copy — and the settings dropdown then drives everything:
 
 - **Tuning** — loop range, proxy resolution, seam window, gates, stream weights (persisted locally; every knob explains itself on hover).
-- **Attention crop** — drag a rectangle on the live frame preview; the seam *search* only looks inside it, rendered loops stay full-frame.
+- **Attention crop** — drag a rectangle on the live frame preview (drag inside it to move it); the seam *search* only looks inside it, rendered loops stay full-frame.
 - **Ignore time ranges** — drag spans onto a filmstrip timeline whose hover scrubs the frame preview; click a span to remove it, overlapping spans merge, auto-detected disruptions show in gray, and a text field mirrors it all numerically. After a first pass you can also shift-drag a span directly on the heatmap.
 - **Analyze / Re-analyze** — runs with a live weighted progress bar (decode → score → render) and a **Stop** button. When the video already has a `.looplab/` workdir, a **Load previous results** button appears instead of anything loading automatically — restarts are always explicit, and the landing page lists recent videos.
 
