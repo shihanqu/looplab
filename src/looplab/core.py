@@ -85,7 +85,11 @@ class SearchParams:
     top: int = 10                  # candidates to keep
     nms: int = 8                   # near-duplicate radius, frames
     crop: tuple[float, float, float, float] | None = None  # normalized x,y,w,h
-                                   # region the SEARCH looks at; output stays full-frame
+                                   # attention crop: region the SEARCH looks at;
+                                   # output stays full-frame
+    ignore_ranges: list[tuple[float, float]] | None = None  # times (s) no loop
+                                   # may overlap; merged into the disruption
+                                   # exclusion mask
 
 
 @dataclass
@@ -162,16 +166,21 @@ def decode_proxy(src: str, w: int, h: int,
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     frame_bytes = w * h * 3
     buf = bytearray()
-    while True:
-        b = proc.stdout.read(1 << 23)
-        if not b:
-            break
-        buf += b
-        if progress and expected_frames:
-            progress(min(len(buf) / (frame_bytes * expected_frames), 1.0))
-    err = proc.stderr.read()
-    if proc.wait() != 0:
-        raise subprocess.CalledProcessError(proc.returncode, cmd, stderr=err)
+    try:
+        while True:
+            b = proc.stdout.read(1 << 23)
+            if not b:
+                break
+            buf += b
+            if progress and expected_frames:
+                progress(min(len(buf) / (frame_bytes * expected_frames), 1.0))
+        err = proc.stderr.read()
+        if proc.wait() != 0:
+            raise subprocess.CalledProcessError(proc.returncode, cmd, stderr=err)
+    finally:  # progress may raise (cancellation) - never orphan the decoder
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
     n = len(buf) // frame_bytes
     if n == 0 or len(buf) % frame_bytes:
         raise RuntimeError("decode produced no complete frames; check the input")
@@ -233,11 +242,15 @@ def band_distances(frames: np.ndarray, offsets: np.ndarray, weights: np.ndarray,
 
     if backend == "mlx":
         mx = mod
+        if progress:
+            progress(0.0)  # cancellation checkpoint before heavy prep
         x = mx.array(frames).reshape(n, -1).astype(mx.float32) * (1.0 / 255.0)
         x = x - mx.mean(x, axis=1, keepdims=True)
         x = x * mx.array(np.sqrt(weights))
         v = mx.concatenate([x[1:2] - x[0:1], (x[2:] - x[:-2]) * 0.5,
                             x[-1:] - x[-2:-1]], axis=0)
+        if progress:
+            progress(0.0)
         t, cov = _focus_stream_mx(frames, mx) if use_focus else (None, 0.0)
         if use_focus:
             log(f"[focus] bright-object mask covers {cov * 100:.1f}% of pixels")
@@ -260,12 +273,15 @@ def band_distances(frames: np.ndarray, offsets: np.ndarray, weights: np.ndarray,
 
     # numpy and cupy share this path; asnumpy is identity for numpy
     xp = mod
-    asnumpy = (lambda a: a) if backend == "numpy" else xp.asnumpy
+    if progress:
+        progress(0.0)  # cancellation checkpoint before heavy prep
     x = xp.asarray(frames).reshape(n, -1).astype(xp.float32) / 255.0
     x -= x.mean(axis=1, keepdims=True)
     x *= xp.asarray(np.sqrt(weights))
     v = xp.concatenate([x[1:2] - x[0:1], (x[2:] - x[:-2]) * 0.5,
                         x[-1:] - x[-2:-1]], axis=0)
+    if progress:
+        progress(0.0)
     t, cov = _focus_stream_xp(frames, xp) if use_focus else (None, 0.0)
     if use_focus:
         log(f"[focus] bright-object mask covers {cov * 100:.1f}% of pixels")
@@ -471,6 +487,16 @@ def run_search(src: str, params: SearchParams | None = None,
     for a, b in bad_runs:
         log(f"[exclude] frames {a}..{b} ({a / fps:.2f}s..{b / fps:.2f}s) — "
             f"sustained framing disruption")
+    if params.ignore_ranges:
+        pad = params.window + 2
+        for pair in params.ignore_ranges:  # careful: t0 above is the timer
+            lo, hi = sorted(float(v) for v in pair)
+            a = max(0, int(np.floor(lo * fps)) - pad)
+            b = min(n, int(np.ceil(hi * fps)) + 1 + pad)
+            if b > a:
+                exclude[a:b] = True
+                log(f"[ignore] frames {a}..{b - 1} ({lo:g}s..{hi:g}s) — "
+                    f"user range")
     exc_cum = np.concatenate([[0], np.cumsum(exclude.astype(np.int32))])
     touches = np.zeros_like(s_win, bool)
     for i, o in enumerate(offsets):

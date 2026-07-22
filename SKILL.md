@@ -70,8 +70,11 @@ On failure: `{"ok": false, "error": "...", "exit_code": N}` on stdout, same code
 | `--vel-weight` | 1.0 | direction flips at the seam | motion blur dominates |
 | `--window` | 5 | seams pose-match but don't flow | very fast cycles (< 0.5 s) |
 | `--crop X,Y,W,H` | full frame | background events pollute the score; loop only one region | — |
+| `--ignore A-B` | — | a known-bad span (fumble, interruption) keeps producing candidates | — |
 
-`--proxy-long` defaults to auto (512/384/256 stepping down with video length) to bound memory on long inputs; set it explicitly to pin quality. `--crop` takes normalized 0–1 fractions and constrains only the *search* — rendered loops remain full-frame.
+`--proxy-long` defaults to auto (512/384/256 stepping down with video length) to bound memory on long inputs; set it explicitly to pin quality. `--crop` is an attention crop in normalized 0–1 fractions: it constrains only the *search* — rendered loops remain full-frame. `--ignore` (seconds, repeatable) forbids loops overlapping a span; the automatic disruption detector already excludes sustained anomalies, so reach for it when you *know* a stretch is bad.
+
+Apple spatial video (MV-HEVC) is handled: the base (left-eye) view is analyzed and exports are flat H.264.
 
 ## Library use
 

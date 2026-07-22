@@ -21,7 +21,7 @@ Frame similarity alone produces loops that *pose* correctly but *pop* on playbac
 Each stream is evaluated over a **±K-frame window along the seam diagonal** (comparing s+k against e+k), so the motion must flow through the cut, not just match at it. Two gates then remove degenerate winners:
 
 - **Activity** — a frozen or occluded stretch loops "perfectly" and shows nothing; loops must contain real motion relative to the video's median.
-- **Disruption exclusion** — sustained framing anomalies (camera bumps, subject leaving frame) are auto-detected via MAD z-scores against the temporal median frame and excluded, while brief motion-blur spikes are kept as legitimate content.
+- **Disruption exclusion** — sustained framing anomalies (camera bumps, subject leaving frame) are auto-detected via MAD z-scores against the temporal median frame and excluded, while brief motion-blur spikes are kept as legitimate content. `--ignore A-B` adds manual exclusions on top for anything the detector shouldn't have to guess at.
 
 The search is exhaustive over a **banded (start × length) space** — every start frame × every loop length within `[--min-loop, --max-loop]`. Cost is one video decode plus one banded distance computation, `O(N · B · d)`: a minute of 30 fps video is ~150k scored pairs and runs in seconds.
 
@@ -63,19 +63,25 @@ Logs go to stderr; stdout carries only the output path (or JSON). Analysis artif
 | `--focus-weight` | 1.0 | bright-object stream weight (0 = off) |
 | `--min-activity` | 0.7 | min in-loop motion vs video median |
 | `--proxy-long` | auto | proxy resolution (512/384/256 by length); lower = faster |
-| `--crop` | full frame | `X,Y,W,H` 0–1 rect the search looks at; output stays full-frame |
+| `--crop` | full frame | attention crop: `X,Y,W,H` 0–1 rect the search looks at; output stays full-frame |
+| `--ignore` | — | `A-B` seconds no loop may overlap (repeatable), e.g. `--ignore 42-47` |
 | `--crf` | 18 | x264 quality of rendered loops |
 
 ## The explorer
 
 ```bash
 looplab --ui                 # open the explorer, pick a video with the OS file dialog
-looplab input.mp4 --ui       # same, pre-loading this video
+looplab input.mp4 --ui       # same, with this video pre-opened
 ```
 
-`--ui` starts a localhost-only server and opens the explorer shell immediately — analysis happens on demand, with a live progress bar (decode → score → render). **Open video…** raises the native OS file picker (macOS `choose file`, tkinter elsewhere) — the server gets a real filesystem path and analyzes the original in place, no upload or copy. **Params** exposes the search knobs (loop range, proxy resolution, seam window, gates, stream weights; persisted locally), **Crop** lets you drag a rectangle on a poster frame to restrict the *search* to a region — rendered loops stay full-frame — and **Re-analyze** reruns the loaded video with new settings.
+`--ui` starts a localhost-only server and opens the explorer shell immediately. Nothing runs or loads on its own: **Open video…** raises the native OS file picker (macOS `choose file`, tkinter elsewhere) — the server gets a real filesystem path and reads the original in place, no upload or copy — and the settings dropdown then drives everything:
 
-The explorer itself is a heatmap of the entire search space: hover to scrub any (start, end) pair with a magnetic cursor that snaps to ridge peaks, click any cell for an instant in-page segment preview, and one-click export the top cuts. A **1:1** toggle gives one heatmap pixel per source frame (scrolling horizontally, centered on the selection) — built for long videos, where fit mode compresses the timeline. Proxy resolution auto-steps down (512/384/256) as videos get long so the working set stays sane; override it in Params or with `--proxy-long`.
+- **Tuning** — loop range, proxy resolution, seam window, gates, stream weights (persisted locally).
+- **Attention crop** — drag a rectangle on a poster frame; the seam *search* only looks inside it, rendered loops stay full-frame.
+- **Ignore time ranges** — spans no loop may overlap (`0-4.5, 42-47`), for fencing off fumbles and interruptions. After a first pass you can also shift-drag a span directly on the heatmap.
+- **Analyze / Re-analyze** — runs with a live weighted progress bar (decode → score → render) and a **Stop** button. When the video already has a `.looplab/` workdir, a **Load previous results** button appears instead of anything loading automatically — restarts are always explicit, and the landing page lists recent videos.
+
+The explorer itself is a heatmap of the entire search space: hover to scrub any (start, end) pair with a magnetic cursor that snaps to ridge peaks, click any cell for an instant in-page segment preview, and one-click export the top cuts. A **1:1** toggle gives one heatmap pixel per source frame (scrolling horizontally, centered on the selection) — built for long videos, where fit mode compresses the timeline. Proxy resolution auto-steps down (512/384/256) as videos get long so the working set stays sane; override it in settings or with `--proxy-long`.
 
 For a no-server snapshot, `--explore` writes the same UI as static files into the workdir: `index.html` (full-quality previews for the top 10) and `artifact.html` (single-file, videos embedded as data URIs — postable anywhere a strict CSP applies).
 
@@ -98,7 +104,7 @@ Exit codes: `0` success · `2` nothing survived the gates (relax `--min-activity
 
 ## Capture tips & limitations
 
-Static camera, single continuous shot, locked exposure if possible. Perform **many repetitions**: each pair of cycles is another lottery ticket for the object landing in the same state twice, and candidate count grows quadratically with cycles. The focus stream assumes a bright, unsaturated subject; disable or reweight it for other footage. VFR phone video is handled by frame-index cutting with CFR re-stamping at the average rate.
+Static camera, single continuous shot, locked exposure if possible. Perform **many repetitions**: each pair of cycles is another lottery ticket for the object landing in the same state twice, and candidate count grows quadratically with cycles. The focus stream assumes a bright, unsaturated subject; disable or reweight it for other footage. VFR phone video is handled by frame-index cutting with CFR re-stamping at the average rate. Apple **spatial video** (MV-HEVC, iPhone/Vision Pro capture) works via ffmpeg's multiview decode: the base (left-eye) view is analyzed and exports are flat H.264 — spatial re-encode is not attempted.
 
 ## License
 

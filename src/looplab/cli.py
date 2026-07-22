@@ -36,10 +36,12 @@ def build_parser() -> argparse.ArgumentParser:
                     "repetitive motion.")
     ap.add_argument("src", nargs="?",
                     help="input video (any ffmpeg-readable format); optional "
-                         "with --ui, where it pre-loads the analysis")
+                         "with --ui, where it pre-loads the video (analysis "
+                         "starts when you press Analyze)")
     ap.add_argument("--ui", action="store_true",
                     help="start the local explorer UI: pick a video with the "
-                         "native OS file dialog, analyze, browse the heatmap")
+                         "native OS file dialog, configure, analyze, browse "
+                         "the heatmap")
     ap.add_argument("--port", type=int, default=8321,
                     help="port for --ui (default 8321, localhost only)")
     ap.add_argument("-o", "--output",
@@ -68,9 +70,13 @@ def build_parser() -> argparse.ArgumentParser:
                       help="proxy long side; lower = faster (default: auto "
                            "512/384/256 by video length)")
     tune.add_argument("--crop", metavar="X,Y,W,H",
-                      help="restrict the seam SEARCH to a normalized 0-1 rect "
-                           "(e.g. 0.2,0.1,0.6,0.8); rendered loops stay "
-                           "full-frame (default: whole frame)")
+                      help="attention crop: restrict the seam SEARCH to a "
+                           "normalized 0-1 rect (e.g. 0.2,0.1,0.6,0.8); "
+                           "rendered loops stay full-frame (default: whole "
+                           "frame)")
+    tune.add_argument("--ignore", action="append", metavar="A-B",
+                      help="time range in seconds no loop may overlap, e.g. "
+                           "--ignore 12.5-14 (repeatable)")
     tune.add_argument("--window", type=int, default=5, metavar="F",
                       help="+/- frames matched across the seam (default 5)")
     tune.add_argument("--vel-weight", type=float, default=1.0,
@@ -116,12 +122,27 @@ def main(argv=None) -> int:
             return _fail(args, 4, "bad --crop; expected X,Y,W,H as 0-1 "
                                   "fractions with the rect inside the frame")
 
+    ignore = None
+    if args.ignore:
+        ignore = []
+        for spec in args.ignore:
+            try:
+                a, _, b = spec.partition("-")
+                lo, hi = float(a), float(b)
+                if not (0 <= lo < hi):
+                    raise ValueError
+            except ValueError:
+                return _fail(args, 4, f"bad --ignore {spec!r}; expected A-B "
+                                      "in seconds with B > A >= 0")
+            ignore.append((lo, hi))
+
     log = (lambda _msg: None) if args.quiet else core.log_stderr
     params = core.SearchParams(
         min_loop=args.min_loop, max_loop=args.max_loop,
         proxy_long=args.proxy_long, window=args.window,
         vel_weight=args.vel_weight, focus_weight=args.focus_weight,
-        min_activity=args.min_activity, top=args.top, crop=crop)
+        min_activity=args.min_activity, top=args.top, crop=crop,
+        ignore_ranges=ignore)
 
     try:
         result = core.run_search(str(src), params, log=log)

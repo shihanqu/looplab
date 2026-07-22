@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "looplab"
-version = "0.4.0"
+version = "0.5.0"
 description = "Find the most seamless loop hidden in a video of repetitive motion"
 readme = "README.md"
 requires-python = ">=3.10"
