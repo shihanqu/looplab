@@ -41,13 +41,23 @@
   .readout .k { font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
     color: var(--muted); }
   .readout .v { font-size: 15px; }
+  /* stable widths: hover updates must never re-wrap the row */
+  #r-start, #r-end { min-width: 18ch; }
+  #r-len { min-width: 7ch; }
+  #r-q { min-width: 10ch; }
   .qbar { width: 120px; height: 6px; border-radius: 3px; background: var(--chip);
     overflow: hidden; align-self: center; }
   .qbar i { display: block; height: 100%; background: var(--good); width: 0; }
 
   .mapwell { background: var(--well); border-radius: 10px; padding: 14px 14px 8px;
     border: 1px solid var(--line); }
-  .scroller { overflow-x: auto; }
+  .maprow { display: flex; gap: 7px; }
+  .scroller { overflow-x: auto; flex: 1; min-width: 0; }
+  .ygut { flex: 0 0 14px; display: flex; flex-direction: column;
+    justify-content: space-between; align-items: center;
+    color: #a99f92; font-size: 10px; }
+  .ygut span { writing-mode: vertical-rl; transform: rotate(180deg); }
+  .ygut .ylab { letter-spacing: .1em; text-transform: uppercase; }
   .stack { position: relative; min-width: 1100px; }
   canvas { display: block; width: 100%; }
   #overlay { position: absolute; inset: 0; cursor: crosshair; }
@@ -124,13 +134,20 @@
   </div>
 
   <div class="mapwell">
-    <div class="scroller">
-      <div class="stack" id="stack">
-        <canvas id="map"></canvas>
-        <canvas id="overlay"></canvas>
+    <div class="maprow">
+      <div class="ygut">
+        <span class="mono" id="ay1"></span>
+        <span class="ylab">loop length</span>
+        <span class="mono" id="ay0"></span>
+      </div>
+      <div class="scroller">
+        <div class="stack" id="stack">
+          <canvas id="map"></canvas>
+          <canvas id="overlay"></canvas>
+        </div>
       </div>
     </div>
-    <div class="axis"><span id="ax0"></span><span>loop start (seconds into source) &mdash; vertical = loop length</span><span id="ax1"></span></div>
+    <div class="axis"><span id="ax0"></span><span>loop start (seconds into source)</span><span id="ax1"></span></div>
     <div class="maplegend">
       <span>worse</span><span class="ramp"></span><span>better</span>
       <span style="margin-left:14px">&#9642; dark cells: gated (low motion, camera disruption, or off-band)</span>
@@ -179,6 +196,8 @@ document.getElementById('metaline').textContent =
   `${DATA.n_scored.toLocaleString()} seams scored`;
 document.getElementById('ax0').textContent = '0 s';
 document.getElementById('ax1').textContent = (N/FPS).toFixed(1) + ' s';
+document.getElementById('ay0').textContent = (offMin/FPS).toFixed(1) + 's';
+document.getElementById('ay1').textContent = ((offMin + O - 1)/FPS).toFixed(1) + 's';
 
 // magma-ish LUT
 const stops = [[0,0,4],[28,16,68],[79,18,123],[129,37,129],[181,54,122],
@@ -348,6 +367,7 @@ DATA.cands.forEach(c => {
     showCell(selected); drawCross(selected, true);
     highlightChip(c.rank);
     openDetail(selected, c);
+    centerOn(c.start_frame);
   });
   chips.appendChild(b);
 });
@@ -528,6 +548,13 @@ document.addEventListener('visibilitychange', () => {
   const v = document.querySelector('#d-strip video');
   if (v && v.paused && !v.ended) v.play().catch(() => {});
 });
+
+// In 1:1 mode, bring a frame column to the middle of the viewport.
+function centerOn(s) {
+  if (!oneToOne) return;
+  const sc = document.querySelector('.scroller');
+  sc.scrollLeft = Math.max(0, s - sc.clientWidth / 2);
+}
 
 // 1:1 zoom: one heatmap column per source frame, scrolled horizontally.
 // Fit mode (default) squeezes the whole timeline into the panel width.

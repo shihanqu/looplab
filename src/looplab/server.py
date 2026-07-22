@@ -243,13 +243,14 @@ TOOLBAR = """
     <strong style="letter-spacing:.06em">looplab</strong>
     <button id="ll-open" class="ll-btn ll-accent">Open video&hellip;</button>
     <button id="ll-params" class="ll-btn ll-icon" title="Analysis settings"
-      aria-label="Analysis settings" aria-expanded="false">
+      aria-expanded="false">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
         stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
         <line x1="3" y1="6" x2="21" y2="6"/><circle cx="9" cy="6" r="2.7"/>
         <line x1="3" y1="12" x2="21" y2="12"/><circle cx="15" cy="12" r="2.7"/>
         <line x1="3" y1="18" x2="21" y2="18"/><circle cx="7" cy="18" r="2.7"/>
       </svg>
+      <span>Analysis settings</span>
     </button>
     <button id="ll-stop" class="ll-btn ll-stop" hidden
       title="Stop the analysis; partial results are discarded">Stop</button>
@@ -314,7 +315,7 @@ TOOLBAR = """
     text-transform:uppercase; letter-spacing:.08em; }
   .ll-f input, .ll-f select { width:96px; background:#1d1a21; color:#ece7df;
     border:1px solid #4a4452; border-radius:5px; padding:5px 7px; font:13px ui-monospace,Menlo,monospace; }
-  .ll-icon { display:inline-flex; align-items:center; padding:6px 9px; }
+  .ll-icon { display:inline-flex; align-items:center; gap:7px; padding:6px 11px; }
   .ll-icon.on { background:#e07a63; border-color:#e07a63; color:#fff; }
   .ll-row { display:flex; gap:18px; flex-wrap:wrap; align-items:end; margin:0 0 14px; }
   .ll-sechead { font-size:11px; color:#8f8798; text-transform:uppercase;
