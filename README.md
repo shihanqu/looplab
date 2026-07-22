@@ -6,7 +6,7 @@ Find the most seamless loop hidden in a video of repetitive motion — and cut i
 looplab input.mp4        # → input.loop.mp4, the best wrap point in the footage
 ```
 
-![the looplab explorer: open a video with the OS file picker, scrub the seam heatmap, preview and export loops](docs/usage.gif)
+![the looplab explorer: open a video with the OS file picker, set an attention crop and ignore ranges, analyze, then scrub the seam heatmap and export a loop](docs/usage.gif)
 
 Point it at footage of anything cyclic — a fidget toy, a pendulum, pouring, spinning, kneading — and looplab scores **every possible (start, end) cut pair** for how invisibly the video can wrap from its last frame back to its first, then renders the winner. The explorer above maps that entire search space: each pixel is one candidate loop (start time × loop length), and the bright ridges are the cuts that flow — hover, preview, and export any of them, not just the top pick.
 
@@ -23,7 +23,7 @@ Each stream is evaluated over a **±K-frame window along the seam diagonal** (co
 - **Activity** — a frozen or occluded stretch loops "perfectly" and shows nothing; loops must contain real motion relative to the video's median.
 - **Disruption exclusion** — sustained framing anomalies (camera bumps, subject leaving frame) are auto-detected via MAD z-scores against the temporal median frame and excluded, while brief motion-blur spikes are kept as legitimate content. `--ignore A-B` adds manual exclusions on top for anything the detector shouldn't have to guess at.
 
-The search is exhaustive over a **banded (start × length) space** — every start frame × every loop length within `[--min-loop, --max-loop]`. Cost is one video decode plus one banded distance computation, `O(N · B · d)`: a minute of 30 fps video is ~150k scored pairs and runs in seconds.
+The search is exhaustive over a **banded (start × length) space** — every start frame × every loop length within `[--min-loop, --max-loop]`. Cost is one video decode plus one banded distance computation, `O(N · B · d)` in frames × band width × proxy area: a minute of 30 fps video is ~150k scored pairs and runs in seconds. Longer footage scales past that quickly — a few minutes at a wide `--max-loop` is millions of pairs and a working set of tens of GB, so the proxy auto-steps down and `--proxy-long 256` is the lever when it drags.
 
 **Backends** — picked automatically, forceable with `LOOPLAB_BACKEND=mlx|cupy|numpy`:
 
@@ -74,14 +74,14 @@ looplab --ui                 # open the explorer, pick a video with the OS file 
 looplab input.mp4 --ui       # same, with this video pre-opened
 ```
 
-`--ui` starts a localhost-only server and opens the explorer shell immediately. Nothing runs or loads on its own: **Open video…** raises the native OS file picker (macOS `choose file`, tkinter elsewhere) — the server gets a real filesystem path and reads the original in place, no upload or copy — and the settings dropdown then drives everything:
+`--ui` starts a localhost-only server and opens the explorer shell immediately. Nothing runs or loads on its own: **Open video…** raises the native OS file picker (macOS `choose file`, tkinter elsewhere) — the server gets a real filesystem path and reads the original in place, no upload or copy — and **Analysis settings** then drives everything:
 
 - **Tuning** — loop range, proxy resolution, seam window, gates, stream weights (persisted locally; every knob explains itself on hover).
 - **Attention crop** — drag a rectangle on the live frame preview (drag inside it to move it); the seam *search* only looks inside it, rendered loops stay full-frame.
 - **Ignore time ranges** — drag spans onto a filmstrip timeline whose hover scrubs the frame preview; click a span to remove it, overlapping spans merge, auto-detected disruptions show in gray, and a text field mirrors it all numerically. After a first pass you can also shift-drag a span directly on the heatmap.
 - **Analyze / Re-analyze** — runs with a live weighted progress bar (decode → score → render) and a **Stop** button. When the video already has a `.looplab/` workdir, a **Load previous results** button appears instead of anything loading automatically — restarts are always explicit, and the landing page lists recent videos.
 
-The explorer itself is a heatmap of the entire search space: hover to scrub any (start, end) pair with a magnetic cursor that snaps to ridge peaks, click any cell for an instant in-page segment preview, and one-click export the top cuts. A **1:1** toggle gives one heatmap pixel per source frame (scrolling horizontally, centered on the selection) — built for long videos, where fit mode compresses the timeline. Proxy resolution auto-steps down (512/384/256) as videos get long so the working set stays sane; override it in settings or with `--proxy-long`.
+The explorer itself is a heatmap of the entire search space — loop start along x, loop length up y — so a bright vertical ridge is one moment in the footage that wraps well at several lengths. Hover to scrub any (start, end) pair with a magnetic cursor that snaps to ridge peaks, click any cell for an instant in-page segment preview, and one-click export the top cuts. A **1:1** toggle gives one heatmap pixel per source frame, scrolling horizontally and centering on whatever you select — clicking a ranked candidate scrolls the map to it, which is how you navigate a long video without hunting.
 
 For a no-server snapshot, `--explore` writes the same UI as static files into the workdir: `index.html` (full-quality previews for the top 10) and `artifact.html` (single-file, videos embedded as data URIs — postable anywhere a strict CSP applies).
 

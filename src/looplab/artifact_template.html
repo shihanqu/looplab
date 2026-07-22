@@ -25,12 +25,10 @@
   * { box-sizing: border-box; }
   body { background: var(--bg); color: var(--ink);
     font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; }
-  .wrap { max-width: 1280px; margin: 0 auto; padding: 28px 24px 64px; }
-  .eyebrow { font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
-    color: var(--muted); margin: 0 0 6px; }
-  h1 { font-family: "Avenir Next", Avenir, Futura, system-ui, sans-serif;
-    font-weight: 600; font-size: 26px; margin: 0 0 4px; text-wrap: balance; }
-  .sub { color: var(--muted); margin: 0 0 22px; max-width: 68ch; }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 12px 24px 64px; }
+  /* one line, always: hover updates must not reflow the page */
+  .sub { color: var(--muted); font-size: 12px; margin: 0 0 8px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace;
     font-variant-numeric: tabular-nums; }
 
@@ -53,7 +51,9 @@
     border: 1px solid var(--line); }
   .maprow { display: flex; gap: 7px; }
   .scroller { overflow-x: auto; flex: 1; min-width: 0; }
-  .ygut { flex: 0 0 14px; display: flex; flex-direction: column;
+  /* min-width:0 pins the gutter to exactly 14px so the axis margin below
+     (21px = 14 + the 7px gap) lines the first tick up with the heatmap */
+  .ygut { flex: 0 0 14px; min-width: 0; display: flex; flex-direction: column;
     justify-content: space-between; align-items: center;
     color: #a99f92; font-size: 10px; }
   .ygut span { writing-mode: vertical-rl; transform: rotate(180deg); }
@@ -65,8 +65,10 @@
     color: #a99f92; font-size: 12px; }
   .ramp { width: 140px; height: 8px; border-radius: 4px;
     background: linear-gradient(90deg,#000004,#3b0f70,#8c2981,#de4968,#fe9f6d,#fcfdbf); }
+  /* left margin matches the y gutter (14px) + its gap (7px) so the first
+     tick sits exactly at the heatmap's left edge */
   .axis { display: flex; justify-content: space-between; color: #a99f92;
-    font-size: 11px; padding: 2px 4px 6px; }
+    font-size: 11px; padding: 2px 0 6px; margin-left: 21px; }
   .zbtn { margin-left: auto; background: #2a2630; color: #d8d2c8;
     border: 1px solid #4a4452; border-radius: 5px; padding: 3px 10px;
     font: 600 11px ui-monospace, Menlo, monospace; cursor: pointer; }
@@ -78,7 +80,7 @@
     font-weight: 600; font-size: 16px; margin: 28px 0 10px; }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; }
   .chip { border: 1px solid var(--line); background: var(--chip); color: var(--ink);
-    border-radius: 999px; padding: 5px 12px; font-size: 13px; cursor: pointer; }
+    border-radius: 999px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
   .chip:hover { border-color: var(--accent); }
   .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .chip.sel { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -119,9 +121,7 @@
 </style>
 
 <div class="wrap">
-  <p class="eyebrow">Video Loop Experimental &mdash; seam search</p>
-  <h1>Loop Seam Explorer</h1>
-  <p class="sub" id="metaline"></p>
+  <p class="sub mono" id="metaline"></p>
 
   <div class="readout" id="readout">
     <div class="f"><span class="k">Start</span><span class="v mono" id="r-start">&mdash;</span></div>
@@ -130,7 +130,6 @@
     <div class="f"><span class="k">Seam quality</span>
       <span class="qbar"><i id="r-qbar"></i></span>
       <span class="v mono" id="r-q">&mdash;</span></div>
-    <div class="f"><span class="k" id="r-hint">hover to scrub &middot; click to pin</span></div>
   </div>
 
   <div class="mapwell">
@@ -191,9 +190,9 @@ const grid = Uint8Array.from(atob(DATA.grid_b64), c => c.charCodeAt(0));
 const offMin = DATA.off_min;
 
 document.getElementById('metaline').textContent =
-  `${DATA.src} \u2014 ${N} frames @ ${FPS.toFixed(2)} fps \u00b7 loop band ` +
-  `${(offMin/FPS).toFixed(2)}\u2013${((offMin+O-1)/FPS).toFixed(2)} s \u00b7 motion period \u2248 ${DATA.period_s.toFixed(2)} s \u00b7 ` +
-  `${DATA.n_scored.toLocaleString()} seams scored`;
+  `${DATA.src} \u00b7 ${N}f @ ${FPS.toFixed(2)}fps \u00b7 band ` +
+  `${(offMin/FPS).toFixed(2)}\u2013${((offMin+O-1)/FPS).toFixed(2)}s \u00b7 period \u2248${DATA.period_s.toFixed(2)}s \u00b7 ` +
+  `${DATA.n_scored.toLocaleString()} seams`;
 document.getElementById('ax0').textContent = '0 s';
 document.getElementById('ax1').textContent = (N/FPS).toFixed(1) + ' s';
 document.getElementById('ay0').textContent = (offMin/FPS).toFixed(1) + 's';
@@ -361,7 +360,7 @@ DATA.cands.forEach(c => {
   const b = document.createElement('button');
   b.className = 'chip mono';
   b.dataset.rank = c.rank;
-  b.innerHTML = `<span class="r">#${c.rank}</span>${c.start_s.toFixed(2)}\u2192${c.end_s.toFixed(2)}s \u00b7 ${c.len_s.toFixed(2)}s`;
+  b.innerHTML = `<span class="r">#${c.rank}</span>${c.start_s.toFixed(2)}s \u00b7 ${c.len_s.toFixed(2)}s`;
   b.addEventListener('click', () => {
     selected = { s: c.start_frame, oi: c.len_frames - offMin };
     showCell(selected); drawCross(selected, true);
