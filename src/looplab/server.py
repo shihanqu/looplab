@@ -479,11 +479,21 @@ class Handler(SimpleHTTPRequestHandler):
 def serve(port: int = 8321, initial: str | None = None,
           open_browser: bool = True) -> None:
     """Run the UI server (localhost only) until interrupted. The UI is live
-    immediately; analysis of `initial` (if given) runs in the background."""
+    immediately; analysis of `initial` (if given) runs in the background -
+    unless its workdir already holds a built explorer, which is adopted as-is
+    so restarts are instant (use Re-analyze to recompute)."""
     httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     if initial:
-        threading.Thread(target=_analyze, args=(initial, {}),
-                         daemon=True).start()
+        src = Path(initial)
+        wd = src.with_suffix(src.suffix + ".looplab")
+        if (wd / "index.html").exists():
+            with STATE.lock:
+                STATE.workdir, STATE.video = wd, str(src)
+                STATE.phase, STATE.pct = "ready", 100.0
+            print(f"looplab: reusing existing analysis in {wd}", file=sys.stderr)
+        else:
+            threading.Thread(target=_analyze, args=(initial, {}),
+                             daemon=True).start()
     url = f"http://127.0.0.1:{port}/"
     print(f"looplab ui: {url}  (Ctrl-C to stop)", file=sys.stderr)
     if open_browser:
