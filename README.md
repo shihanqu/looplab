@@ -10,9 +10,9 @@ looplab input.mp4        # → input.loop.mp4, the best wrap point in the footag
 
 Point it at footage of anything cyclic — a fidget toy, a pendulum, pouring, spinning, kneading — and looplab scores **every possible (start, end) cut pair** for how invisibly the video can wrap from its last frame back to its first, then renders the winner. The explorer above maps that entire search space: each pixel is one candidate loop (start time × loop length), and the bright ridges are the cuts that flow — hover, preview, and export any of them, not just the top pick.
 
-And this is what comes out — a rendered cut playing on repeat. The wrap is at the 3-second mark, if you can find it:
+And this is what comes out — the same 3-second cut played four times back to back, full quality. The wraps are at the 3/6/9-second marks, if you can find them:
 
-![an output loop: a cascading fidget toy passed hand to hand, wrapping seamlessly](docs/example_loop.gif)
+https://github.com/user-attachments/assets/c12c0ffa-4e65-4973-851d-91a153600abf
 
 ## How it works
 
