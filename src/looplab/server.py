@@ -240,7 +240,7 @@ TOOLBAR = """
   border-bottom:1px solid #322e38;font:13px/1.4 system-ui,sans-serif;color:#ece7df;
   backdrop-filter:blur(4px)">
   <div style="display:flex;gap:12px;align-items:center;padding:9px 24px;flex-wrap:wrap">
-    <strong style="letter-spacing:.06em">looplab</strong>
+    <strong style="letter-spacing:.06em;font-size:17px">looplab</strong>
     <button id="ll-open" class="ll-btn ll-accent">Open video&hellip;</button>
     <button id="ll-params" class="ll-btn ll-icon" title="Analysis settings"
       aria-expanded="false">
@@ -257,6 +257,21 @@ TOOLBAR = """
     <span id="ll-status" style="color:#8f8798;font-family:ui-monospace,Menlo,monospace;
       font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
       max-width:52ch"></span>
+    <a id="ll-gh" href="https://github.com/shihanqu/looplab" target="_blank"
+      rel="noopener" title="Star looplab on GitHub">
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
+        <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38
+        0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15
+        -.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51
+        -1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0
+        0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2
+        -.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29
+        .25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16
+        8c0-4.42-3.58-8-8-8Z"/>
+      </svg>
+      <span>Star</span>
+      <span id="ll-ghn" hidden></span>
+    </a>
   </div>
   <div id="ll-panel">
     <div class="ll-row">
@@ -316,6 +331,12 @@ TOOLBAR = """
   .ll-f input, .ll-f select { width:96px; background:#1d1a21; color:#ece7df;
     border:1px solid #4a4452; border-radius:5px; padding:5px 7px; font:13px ui-monospace,Menlo,monospace; }
   .ll-icon { display:inline-flex; align-items:center; gap:7px; padding:6px 11px; }
+  #ll-gh { margin-left:auto; display:inline-flex; align-items:center; gap:6px;
+    background:#2a2630; border:1px solid #4a4452; border-radius:6px; color:#ece7df;
+    padding:5px 11px; font:600 12px system-ui; text-decoration:none; }
+  #ll-gh:hover { border-color:#e07a63; }
+  #ll-ghn { border-left:1px solid #4a4452; padding-left:9px; margin-left:2px;
+    font:600 12px ui-monospace,Menlo,monospace; color:#d8d2c8; }
   .ll-icon.on { background:#e07a63; border-color:#e07a63; color:#fff; }
   .ll-row { display:flex; gap:18px; flex-wrap:wrap; align-items:end; margin:0 0 14px; }
   .ll-sechead { font-size:11px; color:#8f8798; text-transform:uppercase;
@@ -828,6 +849,23 @@ TOOLBAR = """
       st.textContent = 'ignore ' + tok + 's added \\u2014 press Re-analyze to apply';
     }, true);
   }
+
+  // live star count, cached an hour so the API is hit at most once per session
+  (function stars() {
+    const el = $('ll-ghn');
+    if (!el) return;
+    const show = n => { el.textContent = n; el.hidden = false; };
+    const cached = jget('ll-ghstars', null);
+    if (cached && Date.now() - cached.t < 3600e3) { show(cached.n); return; }
+    fetch('https://api.github.com/repos/shihanqu/looplab')
+      .then(r => r.ok ? r.json() : null)
+      .then(j => {
+        if (!j || typeof j.stargazers_count !== 'number') return;
+        jset('ll-ghstars', { n: j.stargazers_count, t: Date.now() });
+        show(j.stargazers_count);
+      })
+      .catch(() => {});
+  })();
 
   loadParams();
   fetch('/status').then(r => r.json()).then(s => {
