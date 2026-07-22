@@ -69,9 +69,11 @@
      tick sits exactly at the heatmap's left edge */
   .axis { display: flex; justify-content: space-between; color: #a99f92;
     font-size: 11px; padding: 2px 0 6px; margin-left: 21px; }
-  .zbtn { margin-left: auto; background: #2a2630; color: #d8d2c8;
+  .zgroup { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+  .zbtn { background: #2a2630; color: #d8d2c8;
     border: 1px solid #4a4452; border-radius: 5px; padding: 3px 10px;
     font: 600 11px ui-monospace, Menlo, monospace; cursor: pointer; }
+  .zico { display: inline-flex; align-items: center; padding: 3px 7px; }
   .zbtn:hover { border-color: #e07a63; }
   .zbtn:focus-visible { outline: 2px solid #e07a63; outline-offset: 2px; }
   .zbtn.on { background: #e07a63; border-color: #e07a63; color: #fff; }
@@ -151,7 +153,19 @@
       <span>worse</span><span class="ramp"></span><span>better</span>
       <span style="margin-left:14px">&#9642; dark cells: gated (low motion, camera disruption, or off-band)</span>
       <span style="margin-left:14px">&#9702; rings: top candidates</span>
-      <button id="zoom11" class="zbtn" title="one heatmap pixel per source frame">1:1</button>
+      <span class="zgroup">
+        <button id="zoomfit" class="zbtn zico on" aria-label="Fit to width"
+          title="Fit the whole video to the panel width (default) &#10;scroll over the map to zoom">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="3" y1="5" x2="3" y2="19"/><line x1="21" y1="5" x2="21" y2="19"/>
+            <polyline points="9 8 5 12 9 16"/><polyline points="15 8 19 12 15 16"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+        </button>
+        <button id="zoom11" class="zbtn"
+          title="One heatmap pixel per source frame &#10;scroll over the map to zoom">1:1</button>
+      </span>
     </div>
   </div>
 
@@ -216,6 +230,7 @@ for (let i = 0; i < 256; i++) { acc += hist[i]; cdf[i] = acc/total; }
 const map = document.getElementById('map'), ov = document.getElementById('overlay');
 const stack = document.getElementById('stack');
 const CH = 320; // css px height
+const MAX_CANVAS_PX = 16384; // safe single-dimension canvas limit
 let wellColor = '#121014';
 
 function groundColor() {
@@ -241,8 +256,9 @@ function paintOffscreen() {
 
 let selected = null;
 function draw() {
-  const dpr = window.devicePixelRatio || 1;
   const w = stack.clientWidth;
+  // deep zoom can outrun the canvas size limit; trade sharpness, never blank
+  const dpr = Math.min(window.devicePixelRatio || 1, MAX_CANVAS_PX / Math.max(w, 1));
   for (const c of [map, ov]) {
     c.width = w*dpr; c.height = CH*dpr;
     c.style.height = CH+'px';
@@ -275,8 +291,13 @@ function cellAt(ev) {
   return { s, oi };
 }
 
-// Magnetic cursor: one screen pixel spans ~2 frames, so snap to the best
-// cell near the pointer: pointing at a bright ridge should read the ridge.
+// Magnetic cursor: at fit zoom one screen pixel spans several frames, so snap
+// to the best cell near the pointer - pointing at a bright ridge should read
+// the ridge. The radius shrinks as zooming in makes pixels literal.
+function snapRadius() {
+  const fpp = N / Math.max(mapWidth(), 1);
+  return Math.min(10, Math.max(1, Math.round(fpp * 2)));
+}
 function refine(cell, rs = 8, ro = 2) {
   let best = cell, bv = -1;
   for (let ds = -rs; ds <= rs; ds++) {
@@ -325,14 +346,14 @@ function qbar(f) { document.getElementById('r-qbar').style.width = (f*100)+'%'; 
 
 ov.addEventListener('mousemove', ev => {
   const c = cellAt(ev); if (!c) return;
-  const r = refine(c);
+  const r = refine(c, snapRadius());
   showCell(r);
   drawCross(selected ?? r, !!selected);
 });
 ov.addEventListener('mouseleave', () => drawCross(selected, true));
 ov.addEventListener('click', ev => {
   const c = cellAt(ev); if (!c) return;
-  const r = refine(c);
+  const r = refine(c, snapRadius());
   selected = r; showCell(r); drawCross(r, true);
   const match = DATA.cands.find(k => k.start_frame === r.s && (k.len_frames-offMin) === r.oi)
     || nearestCand(r);
@@ -548,31 +569,57 @@ document.addEventListener('visibilitychange', () => {
   if (v && v.paused && !v.ended) v.play().catch(() => {});
 });
 
-// In 1:1 mode, bring a frame column to the middle of the viewport.
-function centerOn(s) {
-  if (!oneToOne) return;
-  const sc = document.querySelector('.scroller');
-  sc.scrollLeft = Math.max(0, s - sc.clientWidth / 2);
+// Horizontal zoom is the map's width in px; null means fit the panel, which
+// is both the default and the zoom-out floor. Fit and 1:1 are named stops on
+// the same continuum the wheel moves along.
+const scroller = document.querySelector('.scroller');
+let zoomW = null;
+
+function fitWidth() { return Math.max(scroller.clientWidth, 1100); } // .stack min-width
+function mapWidth() { return stack.getBoundingClientRect().width; }
+
+function setZoom(w, anchorClientX) {
+  const fit = fitWidth();
+  const dpr = window.devicePixelRatio || 1;
+  // past 1:1 there is no more data to show, only magnification for aim
+  const max = Math.max(fit, Math.min(N * 4, MAX_CANVAS_PX / dpr));
+  const prev = stack.getBoundingClientRect();
+  const fx = anchorClientX == null ? null
+    : Math.min(Math.max((anchorClientX - prev.left) / prev.width, 0), 1);
+  zoomW = (w == null || w <= fit + 0.5) ? null : Math.min(w, max);
+  stack.style.width = zoomW == null ? '' : zoomW + 'px';
+  stack.style.minWidth = stack.style.width;
+  draw();
+  if (fx != null) {  // keep the frame under the cursor pinned there
+    scroller.scrollLeft =
+      fx * mapWidth() - (anchorClientX - scroller.getBoundingClientRect().left);
+  }
+  document.getElementById('zoomfit').classList.toggle('on', zoomW == null);
+  document.getElementById('zoom11').classList.toggle('on',
+    zoomW != null && Math.abs(zoomW - N) < 1);
 }
 
-// 1:1 zoom: one heatmap column per source frame, scrolled horizontally.
-// Fit mode (default) squeezes the whole timeline into the panel width.
-let oneToOne = false;
+// Bring a frame column to the middle of the viewport, at whatever the zoom is.
+function centerOn(s) {
+  const w = mapWidth();
+  if (w <= scroller.clientWidth + 1) return;  // nothing to scroll
+  scroller.scrollLeft =
+    Math.max(0, (s + 0.5) / N * w - scroller.clientWidth / 2);
+}
+
+document.getElementById('zoomfit').addEventListener('click', () => setZoom(null));
 document.getElementById('zoom11').addEventListener('click', () => {
-  oneToOne = !oneToOne;
-  const b = document.getElementById('zoom11');
-  b.classList.toggle('on', oneToOne);
-  b.textContent = oneToOne ? '1:1 (scroll)' : '1:1';
-  stack.style.width = oneToOne ? N + 'px' : '';
-  stack.style.minWidth = oneToOne ? N + 'px' : '';
-  draw();
-  if (oneToOne) {
-    const sc = document.querySelector('.scroller');
-    const target = (selected ? selected.s
-      : (DATA.cands[0] ? DATA.cands[0].start_frame : 0));
-    sc.scrollLeft = Math.max(0, target - sc.clientWidth / 2);
-  }
+  setZoom(N);
+  centerOn(selected ? selected.s
+    : (DATA.cands[0] ? DATA.cands[0].start_frame : 0));
 });
+ov.addEventListener('wheel', ev => {
+  // horizontal intent (shift-wheel, trackpad swipe) still pans the scroller
+  if (ev.shiftKey || Math.abs(ev.deltaX) > Math.abs(ev.deltaY)) return;
+  ev.preventDefault();
+  const unit = ev.deltaMode === 1 ? 16 : ev.deltaMode === 2 ? 400 : 1;
+  setZoom(mapWidth() * Math.exp(-ev.deltaY * unit * 0.0025), ev.clientX);
+}, { passive: false });
 
 function repaint() { wellColor = groundColor(); paintOffscreen(); draw(); }
 new MutationObserver(repaint).observe(document.documentElement,
